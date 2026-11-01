@@ -1,0 +1,9 @@
+{
+  "name": "dine",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @dine/api dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test"
+  }
+}

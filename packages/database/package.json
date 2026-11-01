@@ -1,0 +1,9 @@
+{
+  "name": "@dine/database",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  }
+}
