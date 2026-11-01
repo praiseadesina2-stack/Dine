@@ -6,5 +6,9 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "grammy": "^1.46.0"
   }
 }
