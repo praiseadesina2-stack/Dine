@@ -24,7 +24,32 @@ if (!token) {
 
 const bot = new Bot(token);
 
-// Simple session tray (in-memory for instant feedback)
+// User Session State
+interface UserSession {
+  step: "idle" | "awaiting_custom_budget";
+  budget: BudgetBracket | number;
+  budgetLabel: string;
+  craving?: CravingType;
+  rerollCount: number;
+  activeRecs: Recommendation[];
+}
+
+const userSessions = new Map<number, UserSession>();
+
+function getSession(userId: number): UserSession {
+  if (!userSessions.has(userId)) {
+    userSessions.set(userId, {
+      step: "idle",
+      budget: "1000_2000",
+      budgetLabel: "₦1,000 – ₦2,000",
+      rerollCount: 0,
+      activeRecs: []
+    });
+  }
+  return userSessions.get(userId)!;
+}
+
+// Simple in-memory Tray
 interface TrayItem {
   itemName: string;
   vendorName: string;
@@ -56,26 +81,39 @@ const mainKeyboard = new Keyboard()
 // 1. Interactive Decision Engine Flows
 // ----------------------------------------------------
 
-// Step 1: Ask for Budget
+// Step 1: Budget Selection
 async function startDecisionFlow(ctx: any) {
+  const userId = ctx.from?.id;
+  if (userId) {
+    const session = getSession(userId);
+    session.step = "idle";
+    session.rerollCount = 0;
+  }
+
   const keyboard = new InlineKeyboard()
-    .text("Under ₦1,000", "budget:under_1000")
-    .text("₦1,000 – ₦2,000", "budget:1000_2000")
+    .text("Under ₦1,000", "bgt:under_1000")
+    .text("₦1,000 – ₦2,000", "bgt:1000_2000")
     .row()
-    .text("₦2,000 – ₦3,500", "budget:2000_3500")
-    .text("Any Budget 💳", "budget:any")
-    .row();
+    .text("₦2,000 – ₦3,500", "bgt:2000_3500")
+    .text("Any Budget 💳", "bgt:any")
+    .row()
+    .text("✏️ Type My Exact Budget", "bgt:custom");
 
   const message =
     "🤔 *Feeding decisions made simple.*\n\n" +
-    "Let's choose the perfect meal for you in 2 quick taps.\n\n" +
-    "💰 *Step 1: What is your budget for this meal?*";
+    "Let's choose the perfect meal for you in 2 quick steps.\n\n" +
+    "💰 *Step 1: Choose or type your budget for this meal:*\n" +
+    "_(Pick a bracket below or tap 'Type My Exact Budget')_";
 
   if (ctx.callbackQuery) {
-    await ctx.editMessageText(message, {
-      reply_markup: keyboard,
-      parse_mode: "Markdown"
-    });
+    try {
+      await ctx.editMessageText(message, {
+        reply_markup: keyboard,
+        parse_mode: "Markdown"
+      });
+    } catch {
+      await ctx.reply(message, { reply_markup: keyboard, parse_mode: "Markdown" });
+    }
   } else {
     await ctx.reply(message, {
       reply_markup: keyboard,
@@ -87,31 +125,62 @@ async function startDecisionFlow(ctx: any) {
 bot.hears("✨ Decide For Me 🍽️", startDecisionFlow);
 bot.command("decide", startDecisionFlow);
 
-// Step 2: Ask for Craving / Vibe
-bot.callbackQuery(/^budget:(under_1000|1000_2000|2000_3500|any)$/, async (ctx) => {
-  const budget = ctx.match[1] as BudgetBracket;
-  const limits = getBudgetLimits(budget);
-
-  const keyboard = new InlineKeyboard()
-    .text("Heavy & Filling 🍛", `craving:${budget}:filling:0`)
-    .text("Quick Snack 🥪", `craving:${budget}:snack:0`)
-    .row()
-    .text("High Protein 💪", `craving:${budget}:protein:0`)
-    .text("Sweet Treat 🧋", `craving:${budget}:sweet:0`)
-    .row()
-    .text("Spicy & Savory 🌶️", `craving:${budget}:spicy:0`)
-    .text("Surprise Me! 🎲", `craving:${budget}:surprise:0`)
-    .row()
-    .text("🔙 Change Budget", "action_restart_decide");
+// Option to type exact custom budget
+bot.callbackQuery("bgt:custom", async (ctx) => {
+  const userId = ctx.from.id;
+  const session = getSession(userId);
+  session.step = "awaiting_custom_budget";
 
   await ctx.editMessageText(
-    `💰 Budget: *${limits.label}* 🎯\n\n` +
-      "😋 *Step 2: What vibe or craving are you feeling right now?*",
+    "✏️ *Type your exact budget below:*\n\n" +
+      "Send a message with any amount (for example: `1500`, `2200`, or `₦800`).\n\n" +
+      "Dine will find the highest-rated active meals matching your exact spending target!",
     {
-      reply_markup: keyboard,
+      reply_markup: new InlineKeyboard().text("🔙 Back to Budget Brackets", "action_restart_decide"),
       parse_mode: "Markdown"
     }
   );
+  await ctx.answerCallbackQuery();
+});
+
+// Render Craving Step (Step 2)
+function renderCravingStep(budgetLabel: string) {
+  const keyboard = new InlineKeyboard()
+    .text("Heavy & Filling 🍛", "crv:filling")
+    .text("Quick Snack 🥪", "crv:snack")
+    .row()
+    .text("High Protein 💪", "crv:protein")
+    .text("Sweet Treat 🧋", "crv:sweet")
+    .row()
+    .text("Spicy & Savory 🌶️", "crv:spicy")
+    .text("Surprise Me! 🎲", "crv:surprise")
+    .row()
+    .text("🔙 Change Budget", "action_restart_decide");
+
+  const text =
+    `💰 Budget: *${budgetLabel}* 🎯\n\n` +
+    "😋 *Step 2: What vibe or craving are you feeling right now?*";
+
+  return { text, keyboard };
+}
+
+// Budget Bracket Callback
+bot.callbackQuery(/^bgt:(under_1000|1000_2000|2000_3500|any)$/, async (ctx) => {
+  const userId = ctx.from.id;
+  const session = getSession(userId);
+  const budgetKey = ctx.match[1] as BudgetBracket;
+  const limits = getBudgetLimits(budgetKey);
+
+  session.budget = budgetKey;
+  session.budgetLabel = limits.label;
+  session.step = "idle";
+
+  const { text, keyboard } = renderCravingStep(session.budgetLabel);
+
+  await ctx.editMessageText(text, {
+    reply_markup: keyboard,
+    parse_mode: "Markdown"
+  });
   await ctx.answerCallbackQuery();
 });
 
@@ -121,71 +190,98 @@ bot.callbackQuery("action_restart_decide", async (ctx) => {
 });
 
 // Step 3: Present Curated Choices with Justifications
-bot.callbackQuery(/^craving:([^:]+):([^:]+):(\d+)$/, async (ctx) => {
-  const budget = ctx.match[1] as BudgetBracket;
-  const craving = ctx.match[2] as CravingType;
-  const offset = parseInt(ctx.match[3], 10);
+bot.callbackQuery(/^crv:(filling|snack|protein|sweet|spicy|surprise)$/, async (ctx) => {
+  const userId = ctx.from.id;
+  const session = getSession(userId);
+  const craving = ctx.match[1] as CravingType;
 
-  const limits = getBudgetLimits(budget);
-  const recommendations = recommendMeals(budget, craving, offset);
+  session.craving = craving;
+  session.rerollCount = 0;
 
-  if (recommendations.length === 0) {
+  await showRecommendations(ctx, session);
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery("action_reroll", async (ctx) => {
+  const userId = ctx.from.id;
+  const session = getSession(userId);
+  session.rerollCount += 1;
+
+  await showRecommendations(ctx, session);
+  await ctx.answerCallbackQuery({ text: "Served 3 fresh picks! 🎲" });
+});
+
+async function showRecommendations(ctx: any, session: UserSession) {
+  const craving = session.craving || "filling";
+  const recs = recommendMeals(session.budget, craving, session.rerollCount);
+  session.activeRecs = recs;
+
+  if (recs.length === 0) {
     await ctx.editMessageText(
       "😕 No active meals found for that exact combination right now.\n\nTry a broader budget or different craving!",
       {
-        reply_markup: new InlineKeyboard().text("🔄 Try Again", "action_restart_decide"),
+        reply_markup: new InlineKeyboard().text("🔄 Try Another Budget", "action_restart_decide"),
         parse_mode: "Markdown"
       }
     );
-    await ctx.answerCallbackQuery();
     return;
   }
 
   let message =
     `✨ *Dine Recommendations Just for You*\n` +
-    `Budget: *${limits.label}* · Vibe: *${craving.toUpperCase()}*\n\n`;
+    `Budget: *${session.budgetLabel}* · Vibe: *${craving.toUpperCase()}*\n\n`;
 
   const keyboard = new InlineKeyboard();
 
-  recommendations.forEach((rec, idx) => {
+  recs.forEach((rec, idx) => {
     message += `${rec.badge}:\n`;
     message += `🍽️ *${rec.itemName}*\n`;
     message += `🏪 *${rec.vendorName}* · 💵 *₦${rec.price.toLocaleString()}*\n`;
     message += `💡 _${rec.reason}_\n\n`;
 
-    // Add button to choose this meal
+    // Short callback_data to strictly prevent Telegram 64-byte BUTTON_DATA_INVALID error
     keyboard.text(
-      `Pick #${idx + 1}: ${rec.itemName.slice(0, 20)} (₦${rec.price})`,
-      `choose_rec:${rec.vendorId}:${encodeURIComponent(rec.itemName)}:${rec.price}`
+      `Pick #${idx + 1}: ${rec.itemName.slice(0, 18)} (₦${rec.price})`,
+      `pick:${idx}`
     ).row();
   });
 
-  message += "👇 *Tap a button to choose your meal, or reroll for 3 others:*";
+  message += "👇 *Tap your choice to add to tray, or reroll for 3 others:*";
 
   keyboard
-    .text("🎲 Reroll Choices", `craving:${budget}:${craving}:${offset + 1}`)
+    .text("🎲 Reroll Choices", "action_reroll")
     .text("🔄 Start Over", "action_restart_decide");
 
-  await ctx.editMessageText(message, {
-    reply_markup: keyboard,
-    parse_mode: "Markdown"
-  });
-  await ctx.answerCallbackQuery();
-});
+  try {
+    await ctx.editMessageText(message, {
+      reply_markup: keyboard,
+      parse_mode: "Markdown"
+    });
+  } catch (err) {
+    await ctx.reply(message, {
+      reply_markup: keyboard,
+      parse_mode: "Markdown"
+    });
+  }
+}
 
-// User Chooses a Meal
-bot.callbackQuery(/^choose_rec:([^:]+):([^:]+):(\d+)$/, async (ctx) => {
-  const vendorId = ctx.match[1];
-  const itemName = decodeURIComponent(ctx.match[2]);
-  const price = parseInt(ctx.match[3], 10);
-  const vendor = VENDORS.find((v) => v.id === vendorId);
-
+// User Chooses a Recommendation
+bot.callbackQuery(/^pick:(\d+)$/, async (ctx) => {
   const userId = ctx.from.id;
+  const session = getSession(userId);
+  const index = parseInt(ctx.match[1], 10);
+  const chosen = session.activeRecs[index];
+
+  if (!chosen) {
+    await ctx.answerCallbackQuery({ text: "Selection expired, please try again." });
+    return;
+  }
+
   const tray = getTray(userId);
   tray.push({
-    itemName,
-    vendorName: vendor?.name || "Vendor",
-    price
+    itemName: chosen.itemName,
+    vendorName: chosen.vendorName,
+    price: chosen.price
   });
 
   const keyboard = new InlineKeyboard()
@@ -194,7 +290,7 @@ bot.callbackQuery(/^choose_rec:([^:]+):([^:]+):(\d+)$/, async (ctx) => {
 
   await ctx.editMessageText(
     `🎉 *Choice Made!*\n\n` +
-      `We've added *${itemName}* from *${vendor?.name || "Vendor"}* (₦${price.toLocaleString()}) to your tray.\n\n` +
+      `We've added *${chosen.itemName}* from *${chosen.vendorName}* (₦${chosen.price.toLocaleString()}) to your tray!\n\n` +
       `Your tray now has *${tray.length} item(s)*.`,
     {
       reply_markup: keyboard,
@@ -214,13 +310,13 @@ async function showTray(ctx: any) {
 
   if (tray.length === 0) {
     const emptyKeyboard = new InlineKeyboard()
-      .text("✨ Decide For Me 🍽️", "action_start_decide")
+      .text("✨ Decide For Me 🍽️", "action_restart_decide")
       .row()
       .text("🔍 Browse Vendors", "action_browse_vendors");
 
     const text =
       "🛒 *Your Tray is Empty*\n\n" +
-      "Don't know what to eat? Tap *Decide For Me* and let Dine choose your meal!";
+      "Don't know what to eat? Tap *Decide For Me* and let Dine pick for you!";
 
     if (ctx.callbackQuery) {
       await ctx.editMessageText(text, { reply_markup: emptyKeyboard, parse_mode: "Markdown" });
@@ -239,7 +335,7 @@ async function showTray(ctx: any) {
   });
 
   text += `\n💵 *Total: ₦${total.toLocaleString()}*\n\n`;
-  text += "Ready to place your order or need another item?";
+  text += "Ready to place your order or want to add another meal?";
 
   const keyboard = new InlineKeyboard()
     .text("💳 Confirm & Order", "action_confirm_order")
@@ -288,7 +384,7 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
 });
 
 // ----------------------------------------------------
-// 3. Browse Vendors (Optional Explore View)
+// 3. Browse Vendors (Directory Mode)
 // ----------------------------------------------------
 
 function renderVendorsPage(page: number) {
@@ -400,12 +496,24 @@ bot.callbackQuery(/^order_vendor:(.+)$/, async (ctx) => {
 
   const keyboard = new InlineKeyboard();
   if (vendor) {
-    for (const item of vendor.items.slice(0, 5)) {
+    const userId = ctx.from.id;
+    const session = getSession(userId);
+    session.activeRecs = vendor.items.slice(0, 5).map((item) => ({
+      badge: "⭐ Menu Item",
+      title: item.name,
+      vendorName: vendor.name,
+      vendorId: vendor.id,
+      itemName: item.name,
+      price: item.price,
+      reason: "Available from vendor"
+    }));
+
+    vendor.items.slice(0, 5).forEach((item, idx) => {
       keyboard.text(
-        `Add ${item.name.slice(0, 20)} (₦${item.price})`,
-        `choose_rec:${vendor.id}:${encodeURIComponent(item.name)}:${item.price}`
+        `Add ${item.name.slice(0, 18)} (₦${item.price})`,
+        `pick:${idx}`
       ).row();
-    }
+    });
   }
   keyboard.text("🔙 Back to Menu", `vendor:${vendorId}`);
 
@@ -437,7 +545,7 @@ bot.command("start", async (ctx) => {
     `Welcome to Dine, ${firstName}! 🍽️\n\n` +
       "Feeding decisions made simple.\n\n" +
       "Tired of wondering what to eat or scrolling through endless menus?\n\n" +
-      "Tap *✨ Decide For Me 🍽️* below and Dine will pick the best meal for your budget and cravings!",
+      "Tap *✨ Decide For Me 🍽️* below and Dine will choose the best meal for your budget and cravings!",
     {
       reply_markup: mainKeyboard,
       parse_mode: "Markdown"
@@ -449,6 +557,7 @@ bot.command("help", async (ctx) => {
   await ctx.reply(
     "🍽️ *Dine Quick Guide:*\n\n" +
       "• Tap *✨ Decide For Me 🍽️* to get 3 smart meal recommendations based on your budget and craving.\n" +
+      "• You can also type any budget directly (e.g. `1500` or `2000`).\n" +
       "• Tap *🛒 My Tray* to view chosen meals.\n" +
       "• Tap *🔍 Browse Vendors* to view the full directory.\n" +
       "• Tap *💰 Wallet* to inspect your balance.\n" +
@@ -483,7 +592,7 @@ bot.hears("👤 My Profile", async (ctx) => {
       `• Username: *${username}*\n` +
       `• Telegram ID: \`${user?.id}\`\n` +
       `• Campus: *Covenant University*\n` +
-      `• Preference Profile: *Ready*`,
+      `• Preference Profile: *Active*`,
     {
       reply_markup: mainKeyboard,
       parse_mode: "Markdown"
@@ -503,11 +612,16 @@ bot.hears("💬 Talk to Us", async (ctx) => {
   );
 });
 
-// Natural Language query fallback (if student writes text instead of tapping)
+// ----------------------------------------------------
+// 5. Intelligent Message Handler (Typed Budgets & Natural Chat)
+// ----------------------------------------------------
+
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text.trim();
+  const userId = ctx.from.id;
+  const session = getSession(userId);
 
-  // If it's one of our button labels or commands, let existing handlers run
+  // If it's one of our persistent bottom keyboard buttons or commands, ignore here
   if (
     text.startsWith("/") ||
     text === "✨ Decide For Me 🍽️" ||
@@ -520,56 +634,57 @@ bot.on("message:text", async (ctx) => {
     return;
   }
 
-  // Parse natural queries like "I have 1500 and want chicken"
+  // Check if text is a typed budget number (e.g. "1500", "2000", "₦1,500", "2500 naira", "1.5k", "2k")
+  let typedNumber: number | null = null;
   const lower = text.toLowerCase();
-  let budget: BudgetBracket = "1000_2000";
-  let craving: CravingType = "filling";
 
-  if (lower.includes("1000") || lower.includes("1k") || lower.includes("under 1000")) {
-    budget = "under_1000";
-  } else if (lower.includes("3000") || lower.includes("3500") || lower.includes("2500")) {
-    budget = "2000_3500";
+  const kMatch = lower.match(/^(\d+(?:\.\d+)?)\s*k$/);
+  if (kMatch) {
+    typedNumber = Math.round(parseFloat(kMatch[1]) * 1000);
+  } else {
+    const rawDigits = text.replace(/[^\d]/g, "");
+    if (rawDigits.length > 0) {
+      const parsed = parseInt(rawDigits, 10);
+      if (parsed >= 100 && parsed <= 50000) {
+        typedNumber = parsed;
+      }
+    }
   }
 
-  if (lower.includes("protein") || lower.includes("chicken") || lower.includes("beef") || lower.includes("fish") || lower.includes("suya")) {
+  // If user is waiting for custom budget OR simply typed a number
+  if (typedNumber !== null) {
+    session.budget = typedNumber;
+    session.budgetLabel = `₦${typedNumber.toLocaleString()}`;
+    session.step = "idle";
+
+    const { text: cravingText, keyboard } = renderCravingStep(session.budgetLabel);
+
+    await ctx.reply(
+      `🎯 *Budget set to ₦${typedNumber.toLocaleString()}!*\n\n` + cravingText,
+      {
+        reply_markup: keyboard,
+        parse_mode: "Markdown"
+      }
+    );
+    return;
+  }
+
+  // Freeform natural language query (e.g. "I want chicken and rice under 2000")
+  let craving: CravingType = "filling";
+
+  if (lower.includes("protein") || lower.includes("chicken") || lower.includes("beef") || lower.includes("fish") || lower.includes("suya") || lower.includes("egg")) {
     craving = "protein";
   } else if (lower.includes("sweet") || lower.includes("parfait") || lower.includes("shake") || lower.includes("waffle")) {
     craving = "sweet";
-  } else if (lower.includes("snack") || lower.includes("quick") || lower.includes("light")) {
+  } else if (lower.includes("snack") || lower.includes("quick") || lower.includes("light") || lower.includes("chips")) {
     craving = "snack";
   } else if (lower.includes("spicy") || lower.includes("pepper")) {
     craving = "spicy";
   }
 
-  const recs = recommendMeals(budget, craving, 0);
-
-  if (recs.length > 0) {
-    let response = `🤖 *I heard:* "${text}"\n\nHere are *3 options* I picked for you:\n\n`;
-    const keyboard = new InlineKeyboard();
-
-    recs.forEach((rec, idx) => {
-      response += `${rec.badge}:\n`;
-      response += `🍽️ *${rec.itemName}* (${rec.vendorName}) — *₦${rec.price.toLocaleString()}*\n`;
-      response += `💡 _${rec.reason}_\n\n`;
-
-      keyboard.text(
-        `Pick #${idx + 1}: ${rec.itemName.slice(0, 18)} (₦${rec.price})`,
-        `choose_rec:${rec.vendorId}:${encodeURIComponent(rec.itemName)}:${rec.price}`
-      ).row();
-    });
-
-    keyboard.text("✨ Open Decision Guide", "action_restart_decide");
-
-    await ctx.reply(response, {
-      reply_markup: keyboard,
-      parse_mode: "Markdown"
-    });
-  } else {
-    await ctx.reply(
-      "I'm here to help you choose! Tap *✨ Decide For Me 🍽️* below to find something delicious.",
-      { reply_markup: mainKeyboard }
-    );
-  }
+  session.craving = craving;
+  session.rerollCount = 0;
+  await showRecommendations(ctx, session);
 });
 
 bot.catch((err) => {
@@ -577,4 +692,4 @@ bot.catch((err) => {
 });
 
 bot.start();
-console.log("Dine Telegram bot is running with AI decision engine!");
+console.log("Dine Telegram bot is running with custom typed budget and fixed decision engine!");

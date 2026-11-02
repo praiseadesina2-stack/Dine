@@ -11,7 +11,7 @@ export type CravingType =
   | "surprise";
 
 export interface Recommendation {
-  badge: string; // e.g. "🥇 Top Match", "🥈 Smart Value", "🥉 Tasty Alternative"
+  badge: string; // e.g. "🥇 Top Pick", "🥈 Smart Value", "🥉 Alternative Vibe"
   title: string;
   vendorName: string;
   vendorId: string;
@@ -87,11 +87,22 @@ export function getBudgetLimits(bracket: BudgetBracket): { min: number; max: num
 }
 
 export function recommendMeals(
-  budget: BudgetBracket,
+  budgetInput: BudgetBracket | number,
   craving: CravingType,
   seedOffset: number = 0
 ): Recommendation[] {
-  const { min, max } = getBudgetLimits(bracketToBudget(budget));
+  let min = 0;
+  let max = 10000;
+
+  if (typeof budgetInput === "number") {
+    max = budgetInput;
+    min = Math.max(0, budgetInput - 1200);
+  } else {
+    const limits = getBudgetLimits(bracketToBudget(budgetInput));
+    min = limits.min;
+    max = limits.max;
+  }
+
   const keywords = CRAVING_KEYWORDS[craving] || [];
 
   interface Candidate {
@@ -108,7 +119,6 @@ export function recommendMeals(
 
     for (const item of vendor.items) {
       if (item.price > max) continue;
-      // Allow items slightly below min if no strict fit, but give priority to in-range
       let score = 5;
 
       if (item.price >= min && item.price <= max) {
@@ -146,7 +156,7 @@ export function recommendMeals(
   candidates.sort((a, b) => b.score - a.score || b.item.price - a.item.price);
 
   if (candidates.length === 0) {
-    // Fallback: relax budget constraints
+    // Fallback: search all active items under max
     for (const vendor of VENDORS) {
       if (vendor.status !== "active") continue;
       for (const item of vendor.items) {
@@ -164,7 +174,7 @@ export function recommendMeals(
 
   // Rotate offset if user clicks Reroll
   const startIdx = (seedOffset * 3) % Math.max(candidates.length, 1);
-  const sliced = candidates.slice(startIdx, startIdx + 6);
+  const sliced = candidates.slice(startIdx, startIdx + 8);
   const selected: Candidate[] = [];
 
   // Pick unique vendors if possible

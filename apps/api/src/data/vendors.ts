@@ -23,7 +23,7 @@ export const VENDORS: Vendor[] = [
     items: [
       { name: "Ice Block", price: 200 },
       { name: "Cold Bottled Water", price: 200 },
-      { name: "Chilled Soft Drinks", price: 350 }
+      { name: "Chilled Soft Drinks", price: 500 }
     ]
   },
   {
