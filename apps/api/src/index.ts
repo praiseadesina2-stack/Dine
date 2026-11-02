@@ -16,6 +16,7 @@ import {
   CravingType,
   Recommendation
 } from "./engine/recommender.js";
+import { DineOrderingAgent } from "@dine/ai";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -370,17 +371,73 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
   const tray = getTray(userId);
   const total = tray.reduce((sum, item) => sum + item.price, 0);
 
+  if (tray.length === 0) {
+    await ctx.answerCallbackQuery({ text: "Your tray is empty!" });
+    return;
+  }
+
   await ctx.answerCallbackQuery();
-  await ctx.reply(
-    `✅ *Order Intent Recorded!*\n\n` +
-      `Items: *${tray.length}*\n` +
-      `Total Amount: *₦${total.toLocaleString()}*\n\n` +
-      `Campus pickup and direct wallet payment will be finalized in the upcoming transactions milestone.`,
-    {
-      reply_markup: mainKeyboard,
-      parse_mode: "Markdown"
-    }
+
+  const firstItem = tray[0];
+  const progressMsg = await ctx.reply(
+    "🤖 *Dine Autonomous Agent Dispatched!*\n\n" +
+      `Connecting to campus delivery network (\`@orderfromprimebot\`)...\n\n` +
+      `• Vendor: *${firstItem.vendorName}*\n` +
+      `• Item: *${firstItem.itemName}*\n` +
+      `• Total Amount: *₦${total.toLocaleString()}*\n\n` +
+      `⏳ *Agent is now clicking buttons and placing order with Prime...*`,
+    { parse_mode: "Markdown" }
   );
+
+  const agent = new DineOrderingAgent();
+
+  try {
+    const result = await agent.placeOrder({
+      vendorName: firstItem.vendorName,
+      itemName: firstItem.itemName
+    });
+
+    if (result.success) {
+      let successText =
+        "🎉 *Order Processed by Dine Agent!*\n\n" +
+        `• Vendor: *${firstItem.vendorName}*\n` +
+        `• Item: *${firstItem.itemName}*\n` +
+        `• Amount: *₦${total.toLocaleString()}*\n\n` +
+        `📋 *Agent Steps Executed:*\n` +
+        result.stepsCompleted.map((s) => `• ${s}`).join("\n");
+
+      if (result.paystackUrl) {
+        successText += `\n\n💳 *Paystack Checkout Link:*\n${result.paystackUrl}`;
+      }
+
+      await ctx.api.editMessageText(
+        ctx.chat.id,
+        progressMsg.message_id,
+        successText,
+        {
+          parse_mode: "Markdown",
+          reply_markup: new InlineKeyboard()
+            .text("🍽️ Pick Another Meal", "action_restart_decide")
+            .text("🗑️ Clear Tray", "action_clear_tray")
+        }
+      );
+    } else {
+      await ctx.api.editMessageText(
+        ctx.chat.id,
+        progressMsg.message_id,
+        `⚠️ *Agent Update:*\n\n${result.message}\n\n` +
+          result.stepsCompleted.map((s) => `• ${s}`).join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
+  } catch (err: any) {
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      progressMsg.message_id,
+      `⚠️ *Agent error:* ${err?.message || err}`,
+      { parse_mode: "Markdown" }
+    );
+  }
 });
 
 // ----------------------------------------------------
