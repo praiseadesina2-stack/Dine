@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { TelegramClient, Api } from "telegram";
+import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,12 +11,11 @@ dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 export interface OrderTarget {
-  botUsername: string; // e.g. "PrimeOrdersBot"
-  vendorName: string; // e.g. "Delish Yamarita"
-  itemName: string;   // e.g. "Delish Pack + 2 Kebabs"
-  hostel?: string;
+  botUsername?: string; // defaults to process.env.PRIME_BOT_USERNAME || "orderfromprimebot"
+  vendorName: string;   // e.g. "Delish Yamarita"
+  itemName: string;     // e.g. "Delish Pack + 1 Kebab"
+  hall?: string;
   room?: string;
-  phoneNumber?: string;
 }
 
 export interface AgentOrderResult {
@@ -24,6 +23,7 @@ export interface AgentOrderResult {
   message: string;
   paystackUrl?: string;
   rawResponse?: string;
+  stepsCompleted: string[];
 }
 
 export class DineOrderingAgent {
@@ -49,7 +49,7 @@ export class DineOrderingAgent {
 
     if (!this.isConfigured()) {
       throw new Error(
-        "DineOrderingAgent is not fully configured. Please set TELEGRAM_API_ID, TELEGRAM_API_HASH, and TELEGRAM_STRING_SESSION in .env"
+        "DineOrderingAgent is missing credentials. Please set TELEGRAM_API_ID, TELEGRAM_API_HASH, and TELEGRAM_STRING_SESSION in .env"
       );
     }
 
@@ -63,7 +63,7 @@ export class DineOrderingAgent {
   }
 
   /**
-   * Helper to wait for the latest message from a bot
+   * Helper to wait for the latest incoming message from the target bot
    */
   private async getLatestBotMessage(botEntity: any, waitSeconds = 5): Promise<any> {
     const client = await this.getClient();
@@ -79,122 +79,143 @@ export class DineOrderingAgent {
   }
 
   /**
-   * Automates ordering a meal by interacting with the target bot
+   * Helper to click an inline or keyboard button matching a name
    */
-  public async placeOrder(target: OrderTarget): Promise<AgentOrderResult> {
-    const client = await this.getClient();
-
-    try {
-      const botUsername = target.botUsername.replace(/^@/, "");
-      console.log(`🤖 Agent initiating order with @${botUsername} for ${target.itemName}...`);
-
-      const botEntity = await client.getEntity(botUsername);
-
-      // Step 1: Send /start or /menu to initialize conversation
-      await client.sendMessage(botEntity, { message: "/start" });
-      await new Promise((r) => setTimeout(r, 1500));
-
-      let lastMessage = await this.getLatestBotMessage(botEntity);
-
-      // Step 2: Click the Vendor button (e.g. "Delish Yamarita" or "I'm Hungry 🍽️")
-      if (lastMessage && lastMessage.replyMarkup) {
-        const clickedHungry = await this.tryClickButton(lastMessage, ["Hungry", "Order", target.vendorName]);
-        if (clickedHungry) {
-          console.log(`✅ Agent clicked vendor/menu trigger.`);
-          await new Promise((r) => setTimeout(r, 1500));
-          lastMessage = await this.getLatestBotMessage(botEntity);
-        }
-      }
-
-      // Step 3: Click the target vendor if not yet opened
-      if (lastMessage && lastMessage.replyMarkup) {
-        const clickedVendor = await this.tryClickButton(lastMessage, [target.vendorName]);
-        if (clickedVendor) {
-          console.log(`✅ Agent selected vendor: ${target.vendorName}`);
-          await new Promise((r) => setTimeout(r, 1500));
-          lastMessage = await this.getLatestBotMessage(botEntity);
-        }
-      }
-
-      // Step 4: Click the specific meal item button
-      if (lastMessage && lastMessage.replyMarkup) {
-        const clickedItem = await this.tryClickButton(lastMessage, [target.itemName]);
-        if (clickedItem) {
-          console.log(`✅ Agent selected meal item: ${target.itemName}`);
-          await new Promise((r) => setTimeout(r, 1500));
-          lastMessage = await this.getLatestBotMessage(botEntity);
-        }
-      }
-
-      // Step 5: Check messages and buttons for Paystack URL
-      const paystackUrl = this.extractPaystackUrl(lastMessage);
-
-      if (paystackUrl) {
-        console.log(`🎯 Paystack checkout URL captured: ${paystackUrl}`);
-        return {
-          success: true,
-          message: `Order initialized! Paystack checkout URL acquired.`,
-          paystackUrl,
-          rawResponse: lastMessage?.text
-        };
-      }
-
-      return {
-        success: true,
-        message: `Order flow progressed. Ready for payment step.`,
-        rawResponse: lastMessage?.text
-      };
-    } catch (err: any) {
-      console.error("Agent order automation error:", err);
-      return {
-        success: false,
-        message: `Agent failed to automate order: ${err?.message || err}`
-      };
-    }
-  }
-
-  /**
-   * Helper to search for and click a button by matching label text
-   */
-  private async tryClickButton(message: any, searchTerms: string[]): Promise<boolean> {
+  private async clickButtonByText(message: any, targetText: string): Promise<boolean> {
     if (!message || !message.replyMarkup) return false;
 
-    try {
-      const rows = message.replyMarkup.rows || [];
-      for (let r = 0; r < rows.length; r++) {
-        const buttons = rows[r].buttons || [];
-        for (let b = 0; b < buttons.length; b++) {
-          const btn = buttons[b];
-          const btnText = btn.text || "";
+    const rows = (message.replyMarkup as any).rows || [];
+    for (let r = 0; r < rows.length; r++) {
+      const buttons = rows[r].buttons || [];
+      for (let b = 0; b < buttons.length; b++) {
+        const btn = buttons[b];
+        const btnText = (btn.text || "").trim().toLowerCase();
+        const search = targetText.trim().toLowerCase();
 
-          for (const term of searchTerms) {
-            if (btnText.toLowerCase().includes(term.toLowerCase())) {
-              await message.click(b, r);
-              return true;
-            }
+        if (btnText.includes(search) || search.includes(btnText)) {
+          try {
+            await message.click(b, r);
+            return true;
+          } catch (e) {
+            console.warn(`Click failed on [${btn.text}]:`, e);
           }
         }
       }
-    } catch (e) {
-      console.warn("Could not click button:", e);
     }
     return false;
   }
 
   /**
-   * Extracts a Paystack URL from message text or inline URL buttons
+   * Autonomous Order Placement on Prime's Bot
    */
+  public async placeOrder(target: OrderTarget): Promise<AgentOrderResult> {
+    const stepsCompleted: string[] = [];
+    const client = await this.getClient();
+
+    try {
+      const botUsername = (target.botUsername || process.env.PRIME_BOT_USERNAME || "orderfromprimebot").replace(/^@/, "");
+      console.log(`🤖 Dine Agent starting order on @${botUsername} for "${target.vendorName} -> ${target.itemName}"...`);
+
+      const botEntity = await client.getEntity(botUsername);
+      stepsCompleted.push(`Connected to @${botUsername}`);
+
+      // Step 1: Initialize conversation
+      await client.sendMessage(botEntity, { message: "/start" });
+      await new Promise((r) => setTimeout(r, 2000));
+      stepsCompleted.push("Sent /start");
+
+      let msg = await this.getLatestBotMessage(botEntity);
+
+      // Step 2: Open vendor catalog (Click "See all vendors" or "I'm Hungry")
+      const openedCatalog = await this.clickButtonByText(msg, "See all vendors") ||
+                            await this.clickButtonByText(msg, "Hungry");
+
+      if (openedCatalog) {
+        stepsCompleted.push("Clicked 'See all vendors'");
+        await new Promise((r) => setTimeout(r, 2500));
+        msg = await this.getLatestBotMessage(botEntity);
+      }
+
+      // Step 3: Find and Click Vendor (e.g. "Delish Yamarita")
+      let vendorFound = false;
+      for (let page = 1; page <= 4; page++) {
+        vendorFound = await this.clickButtonByText(msg, target.vendorName);
+        if (vendorFound) {
+          stepsCompleted.push(`Selected vendor '${target.vendorName}' (Page ${page})`);
+          await new Promise((r) => setTimeout(r, 2500));
+          msg = await this.getLatestBotMessage(botEntity);
+          break;
+        }
+
+        // Try next page if vendor not on current page
+        const clickedNext = await this.clickButtonByText(msg, "Next");
+        if (clickedNext) {
+          stepsCompleted.push(`Advanced to catalog page ${page + 1}`);
+          await new Promise((r) => setTimeout(r, 2000));
+          msg = await this.getLatestBotMessage(botEntity);
+        } else {
+          break;
+        }
+      }
+
+      if (!vendorFound) {
+        return {
+          success: false,
+          message: `Vendor '${target.vendorName}' was not found in Prime's active directory.`,
+          stepsCompleted,
+          rawResponse: msg?.text
+        };
+      }
+
+      // Step 4: Click Meal Item (or "Order now")
+      const clickedItem = await this.clickButtonByText(msg, target.itemName) ||
+                          await this.clickButtonByText(msg, "Order now");
+
+      if (clickedItem) {
+        stepsCompleted.push(`Selected meal item '${target.itemName}'`);
+        await new Promise((r) => setTimeout(r, 2500));
+        msg = await this.getLatestBotMessage(botEntity);
+      }
+
+      // Step 5: Check for Paystack URL in message or buttons
+      const paystackUrl = this.extractPaystackUrl(msg);
+
+      if (paystackUrl) {
+        stepsCompleted.push("Acquired Paystack Checkout URL");
+        return {
+          success: true,
+          message: "Order placed successfully! Ready for payment.",
+          paystackUrl,
+          stepsCompleted,
+          rawResponse: msg?.text
+        };
+      }
+
+      return {
+        success: true,
+        message: "Order flow completed to current checkout step.",
+        stepsCompleted,
+        rawResponse: msg?.text
+      };
+    } catch (err: any) {
+      console.error("Agent order automation error:", err);
+      return {
+        success: false,
+        message: `Agent encountered an error: ${err?.message || err}`,
+        stepsCompleted
+      };
+    }
+  }
+
   private extractPaystackUrl(message: any): string | undefined {
     if (!message) return undefined;
 
-    // Check message text for paystack link
     const text = message.text || "";
     const match = text.match(/https?:\/\/(?:checkout\.)?paystack\.(?:com|co)\/[^\s]+/i);
     if (match) {
       return match[0];
     }
 
-    // Check inline buttons for URL
     if (message.replyMarkup && message.replyMarkup.rows) {
       for (const row of message.replyMarkup.rows) {
         for (const btn of row.buttons || []) {
