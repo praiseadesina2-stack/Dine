@@ -1,5 +1,9 @@
 import dotenv from "dotenv";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load .env from local or workspace root
 dotenv.config();
@@ -16,6 +20,7 @@ import {
   CravingType,
   Recommendation
 } from "./engine/recommender.js";
+import { DineOrderingAgent } from "@dine/ai";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -365,22 +370,98 @@ bot.callbackQuery("action_clear_tray", async (ctx) => {
   await showTray(ctx);
 });
 
+const orderingAgent = new DineOrderingAgent();
+
 bot.callbackQuery("action_confirm_order", async (ctx) => {
   const userId = ctx.from.id;
   const tray = getTray(userId);
-  const total = tray.reduce((sum, item) => sum + item.price, 0);
 
+  if (tray.length === 0) {
+    await ctx.answerCallbackQuery({ text: "Your tray is empty." });
+    return;
+  }
+
+  const total = tray.reduce((sum, item) => sum + item.price, 0);
   await ctx.answerCallbackQuery();
-  await ctx.reply(
-    `✅ *Order Intent Recorded!*\n\n` +
-      `Items: *${tray.length}*\n` +
-      `Total Amount: *₦${total.toLocaleString()}*\n\n` +
-      `Campus pickup and direct wallet payment will be finalized in the upcoming transactions milestone.`,
-    {
-      reply_markup: mainKeyboard,
-      parse_mode: "Markdown"
-    }
+
+  // If agent is not configured, fall back to informative message
+  if (!orderingAgent.isConfigured()) {
+    await ctx.reply(
+      `✅ *Order Confirmed!*\n\n` +
+        `Items: *${tray.length}*\n` +
+        `Total: *₦${total.toLocaleString()}*\n\n` +
+        `⚙️ _Autonomous ordering is not yet activated on this deployment._\n` +
+        `Please contact Dine support to place your order manually.`,
+      { reply_markup: mainKeyboard, parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  // Show processing message
+  const processingMsg = await ctx.reply(
+    `⏳ *Placing your order on Prime...*\n\n` +
+      `Processing *${tray.length} item(s)* — Total: *₦${total.toLocaleString()}*\n\n` +
+      `_This usually takes 10–20 seconds. Hang tight!_`,
+    { parse_mode: "Markdown" }
   );
+
+  const results: string[] = [];
+  const paystackLinks: string[] = [];
+
+  // Place each tray item as a separate order sequentially
+  for (let i = 0; i < tray.length; i++) {
+    const item = tray[i];
+    const label = `#${i + 1} ${item.itemName} (${item.vendorName})`;
+
+    try {
+      const result = await orderingAgent.placeOrder({
+        vendorName: item.vendorName,
+        itemName: item.itemName
+      });
+
+      if (result.success) {
+        results.push(`✅ ${label}`);
+        if (result.paystackUrl) {
+          paystackLinks.push(`💳 [Pay for ${item.itemName}](${result.paystackUrl})`);
+        }
+      } else {
+        results.push(`❌ ${label}\n   _${result.message}_`);
+      }
+    } catch (err: any) {
+      results.push(`❌ ${label}\n   _Error: ${err?.message || "Unknown error"}_`);
+    }
+  }
+
+  // Clear tray after ordering attempt
+  userTrays.set(userId, []);
+
+  // Build summary message
+  let summary = `🎉 *Order Summary*\n\n`;
+  summary += results.join("\n") + "\n\n";
+  summary += `💵 *Total: ₦${total.toLocaleString()}*\n\n`;
+
+  if (paystackLinks.length > 0) {
+    summary += `*Payment Links:*\n${paystackLinks.join("\n")}\n\n`;
+    summary += `_Tap a link above to complete payment via Paystack._`;
+  } else {
+    summary += `_No Paystack links were returned yet. The vendor may have a different checkout flow._`;
+  }
+
+  // Edit the processing message to show the summary (no reply keyboard on edit — send that separately)
+  try {
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      processingMsg.message_id,
+      summary,
+      { parse_mode: "Markdown" }
+    );
+  } catch {
+    // ignore if message couldn't be edited
+  }
+  await ctx.reply("👆 Order complete! What's next?", {
+    reply_markup: mainKeyboard,
+    parse_mode: "Markdown"
+  });
 });
 
 // ----------------------------------------------------

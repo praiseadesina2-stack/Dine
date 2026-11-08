@@ -2,12 +2,14 @@
   "name": "@dine/api",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc"
   },
   "dependencies": {
+    "@dine/ai": "workspace:*",
     "dotenv": "^18.0.9",
     "grammy": "^1.46.0"
   }
