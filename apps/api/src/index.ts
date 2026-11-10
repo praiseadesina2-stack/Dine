@@ -31,12 +31,15 @@ const bot = new Bot(token);
 
 // User Session State
 interface UserSession {
-  step: "idle" | "awaiting_custom_budget";
+  step: "idle" | "awaiting_custom_budget" | "awaiting_hall" | "awaiting_room";
   budget: BudgetBracket | number;
   budgetLabel: string;
   craving?: CravingType;
   rerollCount: number;
   activeRecs: Recommendation[];
+  // Delivery details — collected once per user, persisted in session
+  hall?: string;
+  room?: string;
 }
 
 const userSessions = new Map<number, UserSession>();
@@ -372,6 +375,33 @@ bot.callbackQuery("action_clear_tray", async (ctx) => {
 
 const orderingAgent = new DineOrderingAgent();
 
+// Known halls at Covenant University for quick-pick keyboard
+const KNOWN_HALLS = [
+  "Paul Hall",
+  "Juanita Hall",
+  "Charles Hall",
+  "Peter Hall",
+  "Deborah Hall",
+  "Faith Hall",
+  "Lydia Hall",
+  "Mary Hall",
+  "Daniel Hall",
+  "Joseph Hall",
+];
+
+/** Build the hall selection inline keyboard */
+function buildHallKeyboard() {
+  const kb = new InlineKeyboard();
+  KNOWN_HALLS.forEach((hall, i) => {
+    kb.text(hall, `hall:${hall}`);
+    if (i % 2 === 1) kb.row(); // 2 per row
+  });
+  kb.row().text("✏️ Type My Hall Name", "hall:custom");
+  return kb;
+}
+
+// ── Confirm & Order ──────────────────────────────────────────────────────────
+
 bot.callbackQuery("action_confirm_order", async (ctx) => {
   const userId = ctx.from.id;
   const tray = getTray(userId);
@@ -381,26 +411,84 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
     return;
   }
 
-  const total = tray.reduce((sum, item) => sum + item.price, 0);
+  await ctx.answerCallbackQuery();
+  const session = getSession(userId);
+
+  // If we don't have delivery details yet, collect them first
+  if (!session.hall) {
+    session.step = "awaiting_hall";
+    await ctx.reply(
+      "🏠 *Where should we deliver your order?*\n\n" +
+        "Pick your hall below or type it manually:",
+      { reply_markup: buildHallKeyboard(), parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (!session.room) {
+    session.step = "awaiting_room";
+    await ctx.reply(
+      `🏠 Hall: *${session.hall}*\n\n` +
+        "🚪 What's your *room number*? (e.g. `D208`)\n\n" +
+        "_Type it below and we'll place your order right after._",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  // Hall & room are set — place the order
+  await runOrderPlacement(ctx, userId);
+});
+
+// Hall picked from inline keyboard
+bot.callbackQuery(/^hall:(.+)$/, async (ctx) => {
+  const userId = ctx.from.id;
+  const session = getSession(userId);
+  const picked = ctx.match[1];
+
   await ctx.answerCallbackQuery();
 
-  // If agent is not configured, fall back to informative message
+  if (picked === "custom") {
+    session.step = "awaiting_hall";
+    await ctx.editMessageText(
+      "✏️ *Type your hall name below:*\n_(e.g. Paul Hall, Juanita Hall)_",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  session.hall = picked;
+  session.step = "awaiting_room";
+
+  await ctx.editMessageText(
+    `✅ Hall set to *${picked}*\n\n` +
+      "🚪 Now type your *room number* (e.g. `D208`):",
+    { parse_mode: "Markdown" }
+  );
+});
+
+// ── The actual order runner (called once hall + room are known) ──────────────
+
+async function runOrderPlacement(ctx: any, userId: number) {
+  const tray = getTray(userId);
+  const session = getSession(userId);
+  const total = tray.reduce((sum, item) => sum + item.price, 0);
+
   if (!orderingAgent.isConfigured()) {
     await ctx.reply(
-      `✅ *Order Confirmed!*\n\n` +
-        `Items: *${tray.length}*\n` +
-        `Total: *₦${total.toLocaleString()}*\n\n` +
-        `⚙️ _Autonomous ordering is not yet activated on this deployment._\n` +
-        `Please contact Dine support to place your order manually.`,
+      `✅ *Order Recorded!*\n\n` +
+        `Items: *${tray.length}* · Total: *₦${total.toLocaleString()}*\n` +
+        `Hall: *${session.hall}* · Room: *${session.room}*\n\n` +
+        `⚙️ _Autonomous ordering is not yet activated on this deployment._`,
       { reply_markup: mainKeyboard, parse_mode: "Markdown" }
     );
     return;
   }
 
-  // Show processing message
   const processingMsg = await ctx.reply(
     `⏳ *Placing your order on Prime...*\n\n` +
-      `Processing *${tray.length} item(s)* — Total: *₦${total.toLocaleString()}*\n\n` +
+      `📦 *${tray.length} item(s)* · ₦${total.toLocaleString()}\n` +
+      `📍 *${session.hall}*, Room *${session.room}*\n\n` +
       `_This usually takes 10–20 seconds. Hang tight!_`,
     { parse_mode: "Markdown" }
   );
@@ -408,7 +496,6 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
   const results: string[] = [];
   const paystackLinks: string[] = [];
 
-  // Place each tray item as a separate order sequentially
   for (let i = 0; i < tray.length; i++) {
     const item = tray[i];
     const label = `#${i + 1} ${item.itemName} (${item.vendorName})`;
@@ -416,7 +503,9 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
     try {
       const result = await orderingAgent.placeOrder({
         vendorName: item.vendorName,
-        itemName: item.itemName
+        itemName: item.itemName,
+        hall: session.hall,
+        room: session.room,
       });
 
       if (result.success) {
@@ -432,37 +521,34 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
     }
   }
 
-  // Clear tray after ordering attempt
+  // Clear tray after attempt
   userTrays.set(userId, []);
 
-  // Build summary message
-  let summary = `🎉 *Order Summary*\n\n`;
+  let summary = `🎉 *Order Summary*\n`;
+  summary += `📍 *${session.hall}*, Room *${session.room}*\n\n`;
   summary += results.join("\n") + "\n\n";
   summary += `💵 *Total: ₦${total.toLocaleString()}*\n\n`;
 
   if (paystackLinks.length > 0) {
     summary += `*Payment Links:*\n${paystackLinks.join("\n")}\n\n`;
-    summary += `_Tap a link above to complete payment via Paystack._`;
+    summary += `_Tap a link above to complete payment._`;
   } else {
-    summary += `_No Paystack links were returned yet. The vendor may have a different checkout flow._`;
+    summary += `_Check server logs — Prime's bot may have a different checkout flow._`;
   }
 
-  // Edit the processing message to show the summary (no reply keyboard on edit — send that separately)
   try {
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      processingMsg.message_id,
-      summary,
-      { parse_mode: "Markdown" }
-    );
+    await ctx.api.editMessageText(ctx.chat!.id, processingMsg.message_id, summary, {
+      parse_mode: "Markdown",
+    });
   } catch {
-    // ignore if message couldn't be edited
+    // ignore edit failure
   }
+
   await ctx.reply("👆 Order complete! What's next?", {
     reply_markup: mainKeyboard,
-    parse_mode: "Markdown"
+    parse_mode: "Markdown",
   });
-});
+}
 
 // ----------------------------------------------------
 // 3. Browse Vendors (Directory Mode)
@@ -694,7 +780,7 @@ bot.hears("💬 Talk to Us", async (ctx) => {
 });
 
 // ----------------------------------------------------
-// 5. Intelligent Message Handler (Typed Budgets & Natural Chat)
+// 5. Intelligent Message Handler (Typed Budgets, Delivery Details & Natural Chat)
 // ----------------------------------------------------
 
 bot.on("message:text", async (ctx) => {
@@ -715,7 +801,35 @@ bot.on("message:text", async (ctx) => {
     return;
   }
 
-  // Check if text is a typed budget number (e.g. "1500", "2000", "₦1,500", "2500 naira", "1.5k", "2k")
+  // ── Delivery: awaiting hall name (typed manually) ──────────────────────────
+  if (session.step === "awaiting_hall") {
+    session.hall = text;
+    session.step = "awaiting_room";
+    await ctx.reply(
+      `✅ Hall set to *${text}*\n\n` +
+        "🚪 Now type your *room number* (e.g. `D208`):",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  // ── Delivery: awaiting room number ─────────────────────────────────────────
+  if (session.step === "awaiting_room") {
+    session.room = text.toUpperCase();
+    session.step = "idle";
+
+    await ctx.reply(
+      `✅ Room set to *${session.room}*\n\n` +
+        `📍 Delivering to: *${session.hall}*, Room *${session.room}*\n\n` +
+        `_Placing your order now..._`,
+      { parse_mode: "Markdown" }
+    );
+
+    await runOrderPlacement(ctx, userId);
+    return;
+  }
+
+  // ── Typed budget number (e.g. "1500", "₦2,000", "1.5k") ───────────────────
   let typedNumber: number | null = null;
   const lower = text.toLowerCase();
 
@@ -750,7 +864,7 @@ bot.on("message:text", async (ctx) => {
     return;
   }
 
-  // Freeform natural language query (e.g. "I want chicken and rice under 2000")
+  // ── Freeform natural language query ────────────────────────────────────────
   let craving: CravingType = "filling";
 
   if (lower.includes("protein") || lower.includes("chicken") || lower.includes("beef") || lower.includes("fish") || lower.includes("suya") || lower.includes("egg")) {
