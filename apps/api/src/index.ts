@@ -27,6 +27,7 @@ import {
   type RecSession
 } from "./recommender-flow.js";
 
+import { DineOrderingAgent } from "@dine/ai";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -229,65 +230,18 @@ function buildHallKeyboard() {
 bot.callbackQuery("action_confirm_order", async (ctx) => {
   const userId = ctx.from.id;
   const tray = getTray(userId);
-
-  if (tray.length === 0) {
-    await ctx.answerCallbackQuery({ text: "Your tray is empty." });
-    return;
-  }
+  const total = tray.reduce((sum, item) => sum + item.price, 0);
 
   await ctx.answerCallbackQuery();
-  const session = getSession(userId);
-
-  // If we don't have delivery details yet, collect them first
-  if (!session.hall) {
-    session.step = "awaiting_hall";
-    await ctx.reply(
-      "🏠 *Where should we deliver your order?*\n\n" +
-        "Pick your hall below or type it manually:",
-      { reply_markup: buildHallKeyboard(), parse_mode: "Markdown" }
-    );
-    return;
-  }
-
-  if (!session.room) {
-    session.step = "awaiting_room";
-    await ctx.reply(
-      `🏠 Hall: *${session.hall}*\n\n` +
-        "🚪 What's your *room number*? (e.g. `D208`)\n\n" +
-        "_Type it below and we'll place your order right after._",
-      { parse_mode: "Markdown" }
-    );
-    return;
-  }
-
-  // Hall & room are set — place the order
-  await runOrderPlacement(ctx, userId);
-});
-
-// Hall picked from inline keyboard
-bot.callbackQuery(/^hall:(.+)$/, async (ctx) => {
-  const userId = ctx.from.id;
-  const session = getSession(userId);
-  const picked = ctx.match[1];
-
-  await ctx.answerCallbackQuery();
-
-  if (picked === "custom") {
-    session.step = "awaiting_hall";
-    await ctx.editMessageText(
-      "✏️ *Type your hall name below:*\n_(e.g. Paul Hall, Juanita Hall)_",
-      { parse_mode: "Markdown" }
-    );
-    return;
-  }
-
-  session.hall = picked;
-  session.step = "awaiting_room";
-
-  await ctx.editMessageText(
-    `✅ Hall set to *${picked}*\n\n` +
-      "🚪 Now type your *room number* (e.g. `D208`):",
-    { parse_mode: "Markdown" }
+  await ctx.reply(
+    `✅ *Order Intent Recorded!*\n\n` +
+      `Items: *${tray.length}*\n` +
+      `Total Amount: *₦${total.toLocaleString()}*\n\n` +
+      `Campus pickup and direct wallet payment will be finalized in the upcoming transactions milestone.`,
+    {
+      reply_markup: mainKeyboard,
+      parse_mode: "Markdown"
+    }
   );
 });
 

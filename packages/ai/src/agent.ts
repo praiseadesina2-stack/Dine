@@ -20,7 +20,7 @@ export interface OrderTarget {
 
 export interface AgentOrderResult {
   success: boolean;
-  message: string;
+  message: string
   paystackUrl?: string;
   rawResponse?: string;
   stepsCompleted: string[];
