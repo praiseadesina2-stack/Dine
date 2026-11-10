@@ -6,7 +6,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "agent:auth": "pnpm --filter @dine/ai auth",
-    "agent:order": "pnpm --filter @dine/ai test:order"
+    "agent:order": "pnpm --filter @dine/ai test:order",
+    "agent:find": "pnpm --filter @dine/ai find"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
