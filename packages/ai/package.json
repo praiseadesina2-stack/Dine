@@ -6,9 +6,15 @@
   "types": "./src/index.ts",
   "scripts": {
     "auth": "tsx src/auth-session.ts",
-    "test:order": "tsx src/test-order.ts"
+    "test:order": "tsx src/test-order.ts",
+    "find": "tsx src/find/cli.ts",
+    "recommend": "tsx src/recommend/cli.ts",
+    "menu:extract": "tsx src/recommend/extract-prime-menu.ts",
+    "menu:check": "tsx src/recommend/check-menu.ts",
+    "test": "node --import tsx --test src/recommend/recommend.test.ts"
   },
   "dependencies": {
+    "@google/genai": "^3.0.0",
     "dotenv": "^18.0.9",
     "input": "^1.0.1",
     "telegram": "^2.26.22"
