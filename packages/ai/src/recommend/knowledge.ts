@@ -111,7 +111,7 @@ export const COMPONENTS: Record<string, Component> = {
     source: "EST (not in dataset)", confidence: "low",
   }),
   burrito: C({
-    id: "burrito", label: "burrito", proteinG: 20, fibreG: 4, kcal: 450, heat: 1, sweet: false, prep: "grilled", base: true,
+    id: "burrito", label: "burrito", proteinG: 20, fibreG: 4, kcal: 450, heat: 1, sweet: false, prep: "fried", base: true,
     allergens: ["gluten"], mayContain: ["dairy"], meat: true, slots: ["lunch", "dinner", "snack"], aliases: ["burrito", "wrap"],
     source: "EST (not in dataset)", confidence: "low",
   }),

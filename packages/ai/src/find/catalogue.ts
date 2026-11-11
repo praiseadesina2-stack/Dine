@@ -2,7 +2,7 @@
  * Read-only catalogue access for the /find agent.
  *
  * The agent only talks to the `Catalogue` interface. Today it is backed by the
- * in-memory vendor list the bot already uses; a Postgres implementation over
+ * Prime crawl (see prime-catalogue.ts); a Postgres implementation over
  * @dine/database (vendors, meals, reviews) can replace it without touching the
  * agent, tools or grounding check.
  */
@@ -48,7 +48,7 @@ export interface Catalogue {
   listVendors(): Promise<VendorSummary[]>;
 }
 
-/** Shape of apps/api/src/data/vendors.ts (prices in naira). Kept structural so @dine/ai does not import from apps/. */
+/** A vendor and its menu, prices in whole naira. */
 export interface SourceVendor {
   id: string;
   name: string;

@@ -35,10 +35,27 @@ const fmt = (m: MealSuggestion, indent = "  ") =>
   [
     `${indent}${m.name}${m.orderable ? `  [${m.orderLabel} · ${m.vendorName}] ₦${m.totalPrice}` : ""}`,
     ...(m.orderable ? [`${indent}  ${m.items.map((i) => `${i.name} ₦${i.price}`).join(" + ")}`] : []),
-    `${indent}  ${m.reasons.join("; ")}`,
-    `${indent}  est. ${m.estimates.proteinG} g protein, ${m.estimates.fibreG} g fibre, ${m.estimates.kcal} kcal, heat ${m.estimates.heat} (${m.estimates.confidence})`,
-    ...m.warnings.map((w) => `${indent}  ! ${w}`),
+    ...(m.reasons.length ? [`${indent}  ${m.reasons.join("; ")}`] : []),
+    // Allergen "may contain" lines are left out of the display; the allergy filter itself still applies.
+    ...m.warnings.filter((w) => !/^may contain/i.test(w)).map((w) => `${indent}  ! ${w}`),
   ].join("\n");
+
+/** Echo what was asked, so the output can be read (or screenshotted) on its own. */
+function printRequest() {
+  const days = req.days ?? [];
+  const goals = req.goals ?? [];
+  const cravings = req.cravings ?? [];
+  const parts = [
+    req.mode === "timetable" ? `Plan: ${days.join(", ") || "all week"}, ${req.mealsPerDay} meal(s) a day` : "Eat now",
+    `Budget: ₦${req.budgetPerMeal.toLocaleString("en-NG")} per meal`,
+    ...(goals.length ? [`Goals: ${goals.join(", ")}`] : []),
+    ...(cravings.length ? [`Cravings: ${cravings.join(", ")}`] : []),
+  ];
+  console.log("Request");
+  for (const p of parts) console.log(`  ${p}`);
+  if (req.note) console.log(`  Note: "${req.note}"`);
+  console.log();
+}
 
 async function main() {
     // --at 19:30 sets the time of day (Lagos) for "now" mode
@@ -46,7 +63,7 @@ async function main() {
   const now = at ? new Date(`2026-11-10T${at.padStart(5, "0")}:00+01:00`) : undefined;
   const result = await recommend(req, { useModel: !argv.includes("--no-model"), now });
   if (argv.includes("--json")) return console.log(JSON.stringify(result, null, 2));
-  if (result.note.parsedBy !== "none") console.log("Note understood as:", JSON.stringify(result.note), "\n");
+  printRequest();
   if (result.mode === "now") result.options.forEach((o, i) => console.log(`${i + 1}.\n${fmt(o)}\n`));
   else
     for (const d of result.days) {

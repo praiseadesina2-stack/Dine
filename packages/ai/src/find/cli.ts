@@ -10,7 +10,8 @@ import readline from "readline/promises";
 import { fileURLToPath } from "url";
 import { GoogleGenAI } from "@google/genai";
 import { VENDORS } from "../../../../apps/api/src/data/vendors.js";
-import { InMemoryCatalogue } from "./catalogue.js";
+import { loadReviewStore, REVIEWS_FILE } from "../context/sources.js";
+import { primeCatalogue } from "./prime-catalogue.js";
 import { FindAgent, formatFindReply } from "./find-agent.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,13 +21,21 @@ const args = process.argv.slice(2);
 const showTrace = args.includes("--trace");
 const query = args.filter((a) => !a.startsWith("--")).join(" ").trim();
 
-const agent = new FindAgent({ catalogue: new InMemoryCatalogue(VENDORS) });
+const reviews = loadReviewStore();
+console.error(
+  reviews
+    ? `Reviews: ${reviews.size} loaded from ${REVIEWS_FILE}`
+    : `Reviews: none (run "pnpm --filter @dine/ai context:ingest" to build ${REVIEWS_FILE})`,
+);
+// Prime crawl first; the bot's vendor list (read only) fills in vendors that joined Prime after the crawl.
+const agent = new FindAgent({ catalogue: primeCatalogue({ extraVendors: VENDORS }), reviews });
 if (!agent.isConfigured()) {
   console.error(`GEMINI_API_KEY is not set. Expected it in ${path.resolve(__dirname, "../../../../.env")}`);
   process.exit(1);
 }
 
-async function ask(q: string) {
+async function ask(q: string, echo = false) {
+  if (echo) console.log(`\nyou> ${q}`);
   const result = await agent.find(q);
   if (result.ok) console.log("\n" + formatFindReply(result) + "\n");
   else console.log(`\n[fallback: ${result.reason}] ${result.detail ?? ""}\n`);
@@ -49,7 +58,8 @@ async function listModels() {
 
 async function main() {
   if (args.includes("--models")) return listModels();
-  if (query) return ask(query);
+  // Echo a one-off question so the output shows what was asked.
+  if (query) return ask(query, true);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   for (;;) {
     const q = (await rl.question("you> ")).trim();

@@ -11,7 +11,8 @@
     "recommend": "tsx src/recommend/cli.ts",
     "menu:extract": "tsx src/recommend/extract-prime-menu.ts",
     "menu:check": "tsx src/recommend/check-menu.ts",
-    "test": "node --import tsx --test src/recommend/recommend.test.ts"
+    "context:ingest": "tsx src/context/ingest-cli.ts",
+    "test": "node --import tsx --test src/recommend/recommend.test.ts src/context/context.test.ts"
   },
   "dependencies": {
     "@google/genai": "^3.0.0",

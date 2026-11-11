@@ -47,6 +47,8 @@ export interface Profile {
   highSodium: boolean;
   slots: Set<Slot>;
   components: Set<string>;
+  /** How the components are cooked. */
+  preps: Set<Prep>;
   confidence: Confidence;
 }
 
@@ -179,7 +181,7 @@ export function profileOf(parts: Part[], minHeat = 0): Profile {
   const p: Profile = {
     proteinG: 0, fibreG: 0, kcal: 0, heat: minHeat, sweet: 0, fried: 0, roasted: 0, boiled: 0, processed: 0,
     allergens: new Set(), meat: false, fish: false, porkPossible: false, highSodium: false,
-    slots: new Set(), components: new Set(), confidence: "high",
+    slots: new Set(), components: new Set(), preps: new Set(), confidence: "high",
   };
   let sweetK = 0, friedK = 0, roastedK = 0, boiledK = 0;
   const baseSlots: Slot[][] = [];
@@ -202,6 +204,7 @@ export function profileOf(parts: Part[], minHeat = 0): Profile {
     p.fish ||= Boolean(c.fish);
     p.highSodium ||= Boolean(c.highSodium);
     p.components.add(c.id);
+    if (prep) p.preps.add(prep);
     if (c.base) baseSlots.push(c.slots);
     if (CONF_RANK[c.confidence] < CONF_RANK[p.confidence]) p.confidence = c.confidence;
   }
