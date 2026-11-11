@@ -4,6 +4,11 @@
  * Use the exported value lists as the button callback codes so both sides agree.
  */
 import type { Allergen } from "./knowledge.js";
+import type { Allergen, Prep } from "./knowledge.js";
+
+/** Cooking methods a student can ask to avoid ("no fried food"). */
+export const AVOIDABLE_PREPS = ["fried", "grilled", "roasted", "baked", "boiled"] as const satisfies readonly Prep[];
+export type AvoidablePrep = (typeof AVOIDABLE_PREPS)[number];
 
 export const GOALS = ["protein_rich", "high_fibre", "healthy", "light", "bulk"] as const;
 export type Goal = (typeof GOALS)[number];
@@ -49,6 +54,8 @@ export interface NoteConstraints {
   /** Component ids from knowledge.ts. */
   excludeComponents: string[];
   excludeVendors: string[];
+  /** Cooking methods to avoid: any meal with a component cooked this way is excluded. */
+  excludePrep: AvoidablePrep[];
   preferComponents: string[];
   preferVendors: string[];
   vegetarian: boolean;
@@ -62,6 +69,7 @@ export interface NoteConstraints {
 
 export const EMPTY_NOTE: NoteConstraints = {
   excludeAllergens: [], excludeComponents: [], excludeVendors: [], preferComponents: [], preferVendors: [],
+  excludeAllergens: [], excludeComponents: [], excludeVendors: [], excludePrep: [], preferComponents: [], preferVendors: [],
   vegetarian: false, noPork: false, unhandled: [], parsedBy: "none",
 };
 

@@ -158,6 +158,28 @@ test("meals per day maps to slots", () => {
   }
 });
 
+test("no fried food: the reader catches it and the engine removes every fried meal", () => {
+  for (const text of ["no fried foods", "nothing fried please", "I don't eat fried things", "avoid fries"]) {
+    assert.deepEqual(parseNoteRules(text, menu).excludePrep, ["fried"], text);
+  }
+  assert.deepEqual(parseNoteRules("I love fried yam", menu).excludePrep, [], "liking fried food is not a restriction");
+
+  const FRIED = /fried|fries|chips|yamarita|burrito|dodo|puff|akara/i;
+  const noFried = note({ excludePrep: ["fried"] });
+  const res = timetable({ mealsPerDay: 1 }, noFried);
+  const evening = now({}, noFried);
+  const shown = [
+    ...res.days.flatMap((d) => d.meals.flatMap((m) => [m.pick!, ...m.alternatives])),
+    ...evening.options,
+  ];
+  assert.ok(shown.length > 0, "something still fits");
+  for (const m of shown) assert.doesNotMatch(label(m), FRIED, label(m));
+
+  // Without the note, fried meals (yamarita, burritos) are in the running.
+  const all = timetable({ mealsPerDay: 1, days: ["mon", "tue", "wed", "thu", "fri"] });
+  assert.ok(all.days.some((d) => FRIED.test(label(d.meals[0].pick!))));
+});
+
 test("note keyword reader", () => {
   const n = parseNoteRules("I'm allergic to groundnut. No sausage please, not too spicy, and I love chicken. Deliver by 7pm", menu);
   assert.deepEqual(n.excludeAllergens, ["groundnut"]);

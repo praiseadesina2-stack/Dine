@@ -58,6 +58,7 @@ const naira = (n: number) => `₦${n.toLocaleString("en-NG")}`;
 function allowed(p: Profile, note: NoteConstraints): boolean {
   if (note.excludeAllergens.some((a) => p.allergens.has(a))) return false;
   if (note.excludeComponents.some((c) => p.components.has(c))) return false;
+  if (note.excludePrep.some((x) => p.preps.has(x))) return false;
   if (note.vegetarian && (p.meat || p.fish)) return false;
   if (note.noPork && p.porkPossible) return false;
   if (note.maxHeat != null && p.heat > note.maxHeat) return false;
@@ -90,6 +91,7 @@ function score(meal: Pick<Meal, "key" | "total" | "profile" | "vendor">, ctx: Ct
       case "protein_rich":
         v += 3 * sat(p.proteinG, 45) - (p.proteinG < 15 ? 1 : 0);
         if (p.proteinG >= 30) reasons.push(`High in protein (est. ~${P} g)`);
+        if (p.proteinG >= 30) reasons.push("High in protein");
         break;
       case "high_fibre": {
         const density = p.kcal ? (p.fibreG / p.kcal) * 1000 : 0;
@@ -109,6 +111,11 @@ function score(meal: Pick<Meal, "key" | "total" | "profile" | "vendor">, ctx: Ct
       case "bulk":
         v += 2 * sat(p.kcal, 1100) + sat(p.proteinG, 50);
         if (p.kcal >= 850) reasons.push(`Big, calorie-dense plate (est. ~${K} kcal)`);
+        if (p.kcal <= 550) reasons.push("Lighter meal");
+        break;
+      case "bulk":
+        v += 2 * sat(p.kcal, 1100) + sat(p.proteinG, 50);
+        if (p.kcal >= 850) reasons.push("Big, calorie-dense plate");
         break;
     }
   }
