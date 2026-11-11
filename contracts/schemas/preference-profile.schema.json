@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dine.local/contracts/preference-profile.schema.json",
+  "title": "PreferenceProfile",
+  "description": "A student's dinner preferences. Preferences only: no health conditions or reasons. Produced by the preference conversation; saved by the backend after the student confirms it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "budget_per_dinner_kobo", "dinner_days"],
+  "properties": {
+    "version": { "const": 1 },
+    "budget_per_dinner_kobo": {
+      "type": "integer",
+      "minimum": 50000,
+      "maximum": 2000000,
+      "description": "Most the student will pay for one dinner, in kobo (₦500 to ₦20,000)."
+    },
+    "dinner_days": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/day" },
+      "minItems": 1,
+      "maxItems": 7,
+      "uniqueItems": true
+    },
+    "goals": {
+      "type": "array",
+      "items": { "enum": ["protein_rich", "high_fibre", "healthy", "light", "bulk"] },
+      "uniqueItems": true,
+      "default": []
+    },
+    "cravings": {
+      "type": "array",
+      "items": { "enum": ["sweet", "filling", "spicy", "savoury", "snack", "surprise"] },
+      "uniqueItems": true,
+      "default": []
+    },
+    "likes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/shortText" },
+      "maxItems": 10,
+      "default": [],
+      "description": "Foods or vendors the student likes, in their words, e.g. 'jollof', 'Delish Yamarita'."
+    },
+    "dislikes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/shortText" },
+      "maxItems": 10,
+      "default": [],
+      "description": "Foods or vendors to avoid in plans."
+    },
+    "avoid_ingredients": {
+      "type": "array",
+      "items": { "enum": ["groundnut", "tree_nut", "egg", "fish", "shellfish", "dairy", "gluten"] },
+      "uniqueItems": true,
+      "default": [],
+      "description": "Hard exclusions. Store the ingredient only, never why."
+    },
+    "avoid_preps": {
+      "type": "array",
+      "items": { "enum": ["fried", "grilled", "roasted", "baked", "boiled"] },
+      "uniqueItems": true,
+      "default": []
+    },
+    "vegetarian": { "type": "boolean", "default": false },
+    "no_pork": { "type": "boolean", "default": false },
+    "spice_level": {
+      "enum": ["none", "mild", "medium", "hot", "any"],
+      "default": "any",
+      "description": "Maps to catalogue spice_0..spice_4: none ≤0, mild ≤1, medium ≤2, hot ≥2."
+    },
+    "portion_preference": { "enum": ["small", "regular", "large", "any"], "default": "any" },
+    "dietary_notes": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Anything else, in the student's words. Preferences only."
+    }
+  },
+  "$defs": {
+    "day": { "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+    "shortText": { "type": "string", "minLength": 1, "maxLength": 40 }
+  }
+}

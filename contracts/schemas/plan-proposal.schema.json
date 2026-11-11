@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dine.local/contracts/plan-proposal.schema.json",
+  "title": "PlanProposal",
+  "description": "Arguments of propose_plan. A proposal only: the backend recomputes all prices and totals from the catalogue and stores a draft. Dinner only, so at most one item per day.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["week_start", "items"],
+  "properties": {
+    "week_start": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "The Monday of the planned week (YYYY-MM-DD, Africa/Lagos). The backend rejects other weekdays and past weeks."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 7,
+      "items": { "$ref": "#/$defs/item" },
+      "description": "One dinner per day. The backend rejects duplicate days."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 280,
+      "description": "Optional one-line summary shown above the plan. No prices or totals."
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["day", "meal_id", "quoted_price_kobo", "reason"],
+      "properties": {
+        "day": { "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+        "meal_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "A meal_id returned by search_meals, get_meal or get_vendor in this conversation."
+        },
+        "quoted_price_kobo": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The price the tool returned. The backend only uses it to detect a price change; it charges the catalogue price."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "One short line tied to the student's preferences. No prices."
+        },
+        "reason_refs": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "default": [],
+          "description": "review_ids backing any claim about taste, portion, service or value. Required if the reason makes such a claim."
+        }
+      }
+    }
+  }
+}

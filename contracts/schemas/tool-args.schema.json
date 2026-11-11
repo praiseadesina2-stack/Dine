@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dine.local/contracts/tool-args.schema.json",
+  "title": "ToolArguments",
+  "description": "Arguments of every tool, as the model sends them (money in whole naira). The AI layer validates and converts to kobo before calling the backend. propose_plan arguments are in plan-proposal.schema.json; final_answer in chat-reply.schema.json.",
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "search_meals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query": { "type": "string", "maxLength": 120 },
+        "min_price_naira": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "max_price_naira": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "vendor_id": { "$ref": "#/$defs/id" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+      }
+    },
+    "get_meal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["meal_id"],
+      "properties": { "meal_id": { "$ref": "#/$defs/id" } }
+    },
+    "get_vendor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor_id"],
+      "properties": { "vendor_id": { "$ref": "#/$defs/id" } }
+    },
+    "list_vendors": { "type": "object", "additionalProperties": false, "properties": {} },
+    "get_reviews": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor_id"],
+      "properties": {
+        "vendor_id": { "$ref": "#/$defs/id" },
+        "meal_id": { "$ref": "#/$defs/id" },
+        "tag": { "enum": ["taste", "portion", "affordability", "quality", "service", "hygiene", "speed"] }
+      }
+    },
+    "search_reviews": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query"],
+      "properties": {
+        "query": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "vendor_id": { "$ref": "#/$defs/id" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 10, "default": 6 }
+      }
+    },
+    "get_user_context": { "type": "object", "additionalProperties": false, "properties": {} },
+    "get_wallet_summary": { "type": "object", "additionalProperties": false, "properties": {} },
+    "propose_plan": { "$ref": "plan-proposal.schema.json" },
+    "request_user_confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "payload"],
+      "oneOf": [
+        {
+          "properties": {
+            "type": { "const": "approve_plan" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["plan_id"],
+              "properties": { "plan_id": { "$ref": "#/$defs/id" } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": { "const": "save_preferences" },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["profile"],
+              "properties": { "profile": { "$ref": "preference-profile.schema.json" } }
+            }
+          }
+        }
+      ]
+    },
+    "flag_data_issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_type", "entity_id", "reason"],
+      "properties": {
+        "entity_type": { "enum": ["meal", "vendor", "review"] },
+        "entity_id": { "$ref": "#/$defs/id" },
+        "reason": { "enum": ["price_wrong", "unavailable", "stale", "wrong_vendor", "offensive_review", "other"] },
+        "note": { "type": "string", "maxLength": 280 }
+      }
+    },
+    "final_answer": { "$ref": "chat-reply.schema.json" }
+  }
+}
