@@ -4,3 +4,19 @@ dist/
 .env.*
 !.env.example
 coverage/
+
+# Local planning docs and GitHub issue lists (reference only, not committed)
+/Dine one-week build plan*.docx
+/Dine_SRS_Technical_Build_and_Hackathon_Plan.docx
+/api_integration_checklist.md
+/daily_execution_checklists.md
+/project_board.md
+/github_issues.*
+/photo_*.jpg
+/Food review - *.pdf
+/Nigerian University Foods Nutrition and Attribute Dataset*.docx
+/Prime Bot Crawl Map.html
+/RECOMMENDER_BACKEND_GUIDE.md
+
+# AI data sources (raw survey data and anything derived from it stay local)
+/Context/

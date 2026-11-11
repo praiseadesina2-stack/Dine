@@ -1,0 +1,885 @@
+{
+  "source": {
+    "bot": "@orderfromprimebot",
+    "crawledAt": "2026-10-19T14:33:05.017923+00:00",
+    "run": "d58495f17c3d4bccb5f726bdc85c29ea"
+  },
+  "vendors": [
+    {
+      "id": "6_33_pizza_republic",
+      "name": "6:33 Pizza Republic",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Pizza, Chicken BBQ Pizza, Chicken Suya Pizza, Burger",
+      "items": [
+        {
+          "name": "Burger",
+          "price": 2000
+        },
+        {
+          "name": "Cheese Burger",
+          "price": 2300
+        },
+        {
+          "name": "Chicken BBQ Pizza (Big)",
+          "price": 6500
+        },
+        {
+          "name": "Chicken BBQ Pizza (Medium)",
+          "price": 4500
+        },
+        {
+          "name": "Chicken BBQ Pizza (Small)",
+          "price": 3500
+        },
+        {
+          "name": "Chicken Suya Pizza (Big)",
+          "price": 6500
+        },
+        {
+          "name": "Chicken Suya Pizza (Medium)",
+          "price": 4500
+        },
+        {
+          "name": "Chicken Suya Pizza (Small)",
+          "price": 3500
+        },
+        {
+          "name": "Extra Cheese (Topping)",
+          "price": 1000
+        },
+        {
+          "name": "Extra Chicken (Topping)",
+          "price": 500
+        },
+        {
+          "name": "Pepperoni Pizza (Big)",
+          "price": 6500
+        },
+        {
+          "name": "Pepperoni Pizza (Medium)",
+          "price": 4500
+        },
+        {
+          "name": "Pepperoni Pizza (Small)",
+          "price": 3500
+        }
+      ]
+    },
+    {
+      "id": "bread_warmer",
+      "name": "Bread Warmer",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Bread Warmer, Jumbo Bread Warmer, Sausage",
+      "items": [
+        {
+          "name": "Bread Warmer + 1 Sausage",
+          "price": 1800
+        },
+        {
+          "name": "Bread Warmer + 2 Sausages",
+          "price": 2100
+        },
+        {
+          "name": "Bread Warmer + 3 Sausages",
+          "price": 2400
+        },
+        {
+          "name": "Jumbo Bread Warmer + 2 Sausages",
+          "price": 2500
+        },
+        {
+          "name": "Jumbo Bread Warmer + 3 Sausages",
+          "price": 2800
+        }
+      ]
+    },
+    {
+      "id": "breakthrough_pizza",
+      "name": "Breakthrough Pizza",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Pizza, Pizza Burger, Pepperoni Pizza, Supreme Pizza",
+      "items": [
+        {
+          "name": "Margherita Pizza with Extra Cheese (12\")",
+          "price": 4500
+        },
+        {
+          "name": "Pepperoni Pizza (Regular)",
+          "price": 2500
+        },
+        {
+          "name": "Pepperoni Pizza (Regular) with Chicken",
+          "price": 3000
+        },
+        {
+          "name": "Pizza Burger (Regular)",
+          "price": 1500
+        },
+        {
+          "name": "Pizza Burger + Extra Chicken & Sausage",
+          "price": 2000
+        },
+        {
+          "name": "Pizza Burger + Extra Chicken, Sausage & Cheese",
+          "price": 2500
+        },
+        {
+          "name": "Pizza Deluxe (Standard)",
+          "price": 3500
+        },
+        {
+          "name": "Supreme Pizza (Regular) with Chicken",
+          "price": 4000
+        }
+      ]
+    },
+    {
+      "id": "burritos",
+      "name": "Burritos",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Chicken & Sausage Packs, Chicken, Burrito, Sausage",
+      "items": [
+        {
+          "name": "Burrito",
+          "price": 1000
+        },
+        {
+          "name": "Chicken Only (Mega)",
+          "price": 3500
+        },
+        {
+          "name": "Chicken Only (Regular)",
+          "price": 1000
+        },
+        {
+          "name": "Chicken Only (Super)",
+          "price": 1500
+        },
+        {
+          "name": "Mega Pack: Chicken + 1 Sausage",
+          "price": 4500
+        },
+        {
+          "name": "Mega Pack: Chicken + 2 Sausages",
+          "price": 5000
+        },
+        {
+          "name": "Mega Pack: Chicken + 3 Sausages",
+          "price": 5300
+        },
+        {
+          "name": "Mega Pack: Chicken + 4 Sausages",
+          "price": 5600
+        },
+        {
+          "name": "Mega Pack: Chicken + 5 Sausages",
+          "price": 5900
+        },
+        {
+          "name": "Regular Pack: Chicken + 1 Sausage",
+          "price": 2200
+        },
+        {
+          "name": "Regular Pack: Chicken + 2 Sausages",
+          "price": 2500
+        },
+        {
+          "name": "Regular Pack: Chicken + 3 Sausages",
+          "price": 2800
+        },
+        {
+          "name": "Regular Pack: Chicken + 4 Sausages",
+          "price": 3100
+        },
+        {
+          "name": "Regular Pack: Chicken + 5 Sausages",
+          "price": 3400
+        },
+        {
+          "name": "Sausage",
+          "price": 300
+        },
+        {
+          "name": "Super Pack: Chicken + 1 Sausage",
+          "price": 2700
+        },
+        {
+          "name": "Super Pack: Chicken + 2 Sausages",
+          "price": 3000
+        },
+        {
+          "name": "Super Pack: Chicken + 3 Sausages",
+          "price": 3400
+        },
+        {
+          "name": "Super Pack: Chicken + 4 Sausages",
+          "price": 3600
+        },
+        {
+          "name": "Super Pack: Chicken + 5 Sausages",
+          "price": 3900
+        }
+      ]
+    },
+    {
+      "id": "choice_waffles",
+      "name": "Choice Waffles",
+      "location": "inside_cafeteria",
+      "open": true,
+      "description": "Sells Waffles, Vanilla Waffle, Chocolate Waffle, Strawberry Waffle",
+      "items": [
+        {
+          "name": "Chocolate Waffle (One Circle)",
+          "price": 700
+        },
+        {
+          "name": "Egg Sauce",
+          "price": 200
+        },
+        {
+          "name": "Fried Egg",
+          "price": 150
+        },
+        {
+          "name": "Plastic Pack",
+          "price": 200
+        },
+        {
+          "name": "Sausage (Cut & Peppered)",
+          "price": 200
+        },
+        {
+          "name": "Strawberry Waffle (One Circle)",
+          "price": 700
+        },
+        {
+          "name": "Vanilla Waffle (One Circle)",
+          "price": 600
+        }
+      ]
+    },
+    {
+      "id": "cu_pizza",
+      "name": "CU Pizza",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Pizza, Pepperoni Pizza, Pizza Deluxe, Chicken Lover Pizza",
+      "items": [
+        {
+          "name": "Cheesy Pizza",
+          "price": 7000
+        },
+        {
+          "name": "Chicken Lover Pizza",
+          "price": 7000
+        },
+        {
+          "name": "Pepperoni Pizza",
+          "price": 3500
+        },
+        {
+          "name": "Pizza Deluxe",
+          "price": 6000
+        },
+        {
+          "name": "Regular Pizza",
+          "price": 2500
+        },
+        {
+          "name": "Standard Pizza",
+          "price": 4500
+        }
+      ]
+    },
+    {
+      "id": "cu_pizza_burger",
+      "name": "CU Pizza Burger",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Pizza Burger, Beef Pizza Burger, Chicken Pizza Burger, Sausage",
+      "items": [
+        {
+          "name": "Beef Pizza Burger (Regular)",
+          "price": 1500
+        },
+        {
+          "name": "Beef Pizza Burger + Egg & Extra Sausage",
+          "price": 2700
+        },
+        {
+          "name": "Beef Pizza Burger + Extra Sausage",
+          "price": 2300
+        },
+        {
+          "name": "Beef Pizza Burger + Extra Sausage (Big Dough)",
+          "price": 2700
+        },
+        {
+          "name": "Chicken Pizza Burger (Regular)",
+          "price": 1700
+        },
+        {
+          "name": "Chicken Pizza Burger + Egg & Extra Sausage",
+          "price": 3000
+        },
+        {
+          "name": "Chicken Pizza Burger + Extra Sausage",
+          "price": 2500
+        },
+        {
+          "name": "Chicken Pizza Burger + Extra Sausage (Big Dough)",
+          "price": 2900
+        },
+        {
+          "name": "Egg Beef Pizza Burger",
+          "price": 1900
+        },
+        {
+          "name": "Egg Chicken Pizza Burger",
+          "price": 2100
+        },
+        {
+          "name": "Extra Cheese",
+          "price": 700
+        }
+      ]
+    },
+    {
+      "id": "cu_spicy",
+      "name": "CU Spicy",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Boli, Potato, Fish, Chicken",
+      "items": [
+        {
+          "name": "Boli, Potato & Egg",
+          "price": 2000
+        },
+        {
+          "name": "Chicken (Large)",
+          "price": 2500
+        },
+        {
+          "name": "Chicken (Regular)",
+          "price": 2000
+        },
+        {
+          "name": "Fish (Large)",
+          "price": 1500
+        },
+        {
+          "name": "Fish (Medium)",
+          "price": 1000
+        },
+        {
+          "name": "Fish (Small)",
+          "price": 200
+        },
+        {
+          "name": "Ponmo",
+          "price": 200
+        },
+        {
+          "name": "Round Fish",
+          "price": 500
+        }
+      ]
+    },
+    {
+      "id": "delish_yamarita",
+      "name": "Delish Yamarita",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Yamarita, Kebab, Egg, Pepper Stew",
+      "items": [
+        {
+          "name": "Delish Pack + 1 Kebab",
+          "price": 2200
+        },
+        {
+          "name": "Delish Pack + 2 Kebabs",
+          "price": 2600
+        },
+        {
+          "name": "Delish Pack + 3 Kebabs",
+          "price": 3000
+        },
+        {
+          "name": "Delish Pack + 4 Kebabs",
+          "price": 3400
+        },
+        {
+          "name": "Delish Pack + 5 Kebabs",
+          "price": 3800
+        },
+        {
+          "name": "Egg",
+          "price": 300
+        },
+        {
+          "name": "Kings Pack + 1 Kebab",
+          "price": 3000
+        },
+        {
+          "name": "Kings Pack + 2 Kebabs",
+          "price": 3400
+        },
+        {
+          "name": "Kings Pack + 3 Kebabs",
+          "price": 3800
+        },
+        {
+          "name": "Kings Pack + 4 Kebabs",
+          "price": 4200
+        },
+        {
+          "name": "Kings Pack + 5 Kebabs",
+          "price": 4600
+        },
+        {
+          "name": "Pepper Stew",
+          "price": 300
+        },
+        {
+          "name": "Ponmo",
+          "price": 300
+        },
+        {
+          "name": "Royal Pack + 1 Kebab",
+          "price": 2600
+        },
+        {
+          "name": "Royal Pack + 2 Kebabs",
+          "price": 3000
+        },
+        {
+          "name": "Royal Pack + 3 Kebabs",
+          "price": 3400
+        },
+        {
+          "name": "Royal Pack + 4 Kebabs",
+          "price": 3800
+        },
+        {
+          "name": "Royal Pack + 5 Kebabs",
+          "price": 4200
+        },
+        {
+          "name": "Sausage",
+          "price": 300
+        }
+      ]
+    },
+    {
+      "id": "dg_and_g_boli",
+      "name": "DG and G Boli",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Boli, Fish, Egg, Sausage",
+      "items": [
+        {
+          "name": "Beef",
+          "price": 300
+        },
+        {
+          "name": "Boli (Extra Large)",
+          "price": 3000
+        },
+        {
+          "name": "Boli (Large)",
+          "price": 2500
+        },
+        {
+          "name": "Boli (Regular)",
+          "price": 2000
+        },
+        {
+          "name": "Boli (Small)",
+          "price": 1500
+        },
+        {
+          "name": "Egg",
+          "price": 300
+        },
+        {
+          "name": "Fish",
+          "price": 500
+        },
+        {
+          "name": "Plastic Pack",
+          "price": 200
+        },
+        {
+          "name": "Ponmo",
+          "price": 100
+        },
+        {
+          "name": "Sausage",
+          "price": 300
+        }
+      ]
+    },
+    {
+      "id": "emabuop_g_foods",
+      "name": "Emabuop.G Foods",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Boli, Yam & Potato, Egg Sauce, Fish Sauce, Chicken",
+      "items": [
+        {
+          "name": "Beef",
+          "price": 200
+        },
+        {
+          "name": "Boli, Yam & Potato (Extra Large)",
+          "price": 2700
+        },
+        {
+          "name": "Boli, Yam & Potato (Large)",
+          "price": 2200
+        },
+        {
+          "name": "Boli, Yam & Potato (Regular)",
+          "price": 1700
+        },
+        {
+          "name": "Chicken (Large)",
+          "price": 2000
+        },
+        {
+          "name": "Chicken (Medium)",
+          "price": 1500
+        },
+        {
+          "name": "Chicken (Small)",
+          "price": 1000
+        },
+        {
+          "name": "Egg",
+          "price": 300
+        },
+        {
+          "name": "Egg Sauce (per spoon)",
+          "price": 700
+        },
+        {
+          "name": "Fish Sauce (per spoon)",
+          "price": 400
+        },
+        {
+          "name": "Gizzard (Large)",
+          "price": 500
+        },
+        {
+          "name": "Gizzard (Small)",
+          "price": 300
+        },
+        {
+          "name": "Normal Sauce (per spoon)",
+          "price": 250
+        },
+        {
+          "name": "Pepper Sauce (per spoon)",
+          "price": 300
+        },
+        {
+          "name": "Plastic Pack",
+          "price": 200
+        },
+        {
+          "name": "Ponmo (Large)",
+          "price": 250
+        },
+        {
+          "name": "Ponmo (Small)",
+          "price": 100
+        },
+        {
+          "name": "Round Fish",
+          "price": 600
+        },
+        {
+          "name": "Sausage",
+          "price": 300
+        },
+        {
+          "name": "Sliced Fish",
+          "price": 200
+        }
+      ]
+    },
+    {
+      "id": "evelyn_concept",
+      "name": "Evelyn Concept",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Fried Yam, Potato Chips, Yam & Potato Chips, Egg Sauce",
+      "items": [
+        {
+          "name": "Beef",
+          "price": 200
+        },
+        {
+          "name": "Chicken",
+          "price": 1500
+        },
+        {
+          "name": "Egg",
+          "price": 300
+        },
+        {
+          "name": "Egg Sauce",
+          "price": 800
+        },
+        {
+          "name": "Fried Yam (Large)",
+          "price": 2000
+        },
+        {
+          "name": "Fried Yam (Regular)",
+          "price": 1500
+        },
+        {
+          "name": "Gizzard",
+          "price": 500
+        },
+        {
+          "name": "Plantain",
+          "price": 200
+        },
+        {
+          "name": "Plastic Pack",
+          "price": 200
+        },
+        {
+          "name": "Ponmo",
+          "price": 150
+        },
+        {
+          "name": "Potato Chips (Large)",
+          "price": 2000
+        },
+        {
+          "name": "Potato Chips (Regular)",
+          "price": 1500
+        },
+        {
+          "name": "Sausage",
+          "price": 300
+        },
+        {
+          "name": "Yam & Potato Chips (Large)",
+          "price": 2000
+        },
+        {
+          "name": "Yam & Potato Chips (Regular)",
+          "price": 1500
+        }
+      ]
+    },
+    {
+      "id": "fish_and_chips",
+      "name": "Fish and Chips",
+      "location": "outside_cafeteria",
+      "open": false,
+      "description": "Sells Fish and Chips, Catfish, Croaker, Tilapia",
+      "items": [
+        {
+          "name": "Catfish & Chips",
+          "price": 2500
+        },
+        {
+          "name": "Catfish (No Chips)",
+          "price": 2000
+        },
+        {
+          "name": "Croaker & Chips (Large)",
+          "price": 6000
+        },
+        {
+          "name": "Croaker & Chips (Regular)",
+          "price": 5000
+        },
+        {
+          "name": "Croaker (Large, No Chips)",
+          "price": 5500
+        },
+        {
+          "name": "Croaker (Regular, No Chips)",
+          "price": 4500
+        },
+        {
+          "name": "Tilapia & Chips (Large)",
+          "price": 5000
+        },
+        {
+          "name": "Tilapia & Chips (Regular)",
+          "price": 4000
+        },
+        {
+          "name": "Tilapia (Large, No Chips)",
+          "price": 4500
+        },
+        {
+          "name": "Tilapia (Regular, No Chips)",
+          "price": 3500
+        }
+      ]
+    },
+    {
+      "id": "grandpa_chips",
+      "name": "Grandpa Chips",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Chips, Chicken, Fish, Egg Sauce",
+      "items": [
+        {
+          "name": "Beef",
+          "price": 200
+        },
+        {
+          "name": "Chicken (Large)",
+          "price": 2000
+        },
+        {
+          "name": "Chicken (Regular)",
+          "price": 1500
+        },
+        {
+          "name": "Chips (Extra Large)",
+          "price": 2500
+        },
+        {
+          "name": "Chips (Large)",
+          "price": 2000
+        },
+        {
+          "name": "Chips (Regular)",
+          "price": 1800
+        },
+        {
+          "name": "Chips (Small)",
+          "price": 1500
+        },
+        {
+          "name": "Egg",
+          "price": 300
+        },
+        {
+          "name": "Egg Sauce",
+          "price": 500
+        },
+        {
+          "name": "Fish",
+          "price": 1800
+        },
+        {
+          "name": "Gizzard",
+          "price": 500
+        },
+        {
+          "name": "Plastic Pack",
+          "price": 200
+        },
+        {
+          "name": "Sausage",
+          "price": 250
+        }
+      ]
+    },
+    {
+      "id": "slash_shawarma",
+      "name": "Slash Shawarma",
+      "location": "outside_cafeteria",
+      "open": true,
+      "description": "Sells Shawarma, Jumbo Shawarma, Sausage, Chicken",
+      "items": [
+        {
+          "name": "Jumbo Shawarma + 3 Sausages & Extra Chicken",
+          "price": 4000
+        },
+        {
+          "name": "Shawarma + 1 Sausage",
+          "price": 2000
+        },
+        {
+          "name": "Shawarma + 2 Sausages",
+          "price": 2500
+        },
+        {
+          "name": "Shawarma + 2 Sausages & Extra Chicken",
+          "price": 3000
+        },
+        {
+          "name": "Shawarma + 3 Sausages & Extra Chicken",
+          "price": 3500
+        }
+      ]
+    },
+    {
+      "id": "waffledom",
+      "name": "Waffledom",
+      "location": "inside_cafeteria",
+      "open": false,
+      "description": "Sells Waffles, Nutella, Ice Cream, Oreos",
+      "items": [
+        {
+          "name": "Circle Waffle",
+          "price": 700
+        },
+        {
+          "name": "Egg",
+          "price": 300
+        },
+        {
+          "name": "Ice Cream (Topping)",
+          "price": 800
+        },
+        {
+          "name": "Jam (Topping)",
+          "price": 800
+        },
+        {
+          "name": "M&M's (Topping)",
+          "price": 500
+        },
+        {
+          "name": "Marshmallow (Topping)",
+          "price": 500
+        },
+        {
+          "name": "Nutella (Topping)",
+          "price": 1000
+        },
+        {
+          "name": "Oreos (Topping)",
+          "price": 500
+        },
+        {
+          "name": "Peanut Butter (Topping)",
+          "price": 800
+        },
+        {
+          "name": "Sausage",
+          "price": 300
+        },
+        {
+          "name": "Sprinkles (Topping)",
+          "price": 500
+        },
+        {
+          "name": "Square Waffle",
+          "price": 500
+        },
+        {
+          "name": "White & Black Chocolate Chips (Topping)",
+          "price": 700
+        }
+      ]
+    }
+  ]
+}
