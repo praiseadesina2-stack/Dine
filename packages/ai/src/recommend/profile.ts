@@ -159,6 +159,10 @@ export function parseItem(vendorName: string, itemName: string, price: number): 
   if (/fried yam/.test(n)) return { role: "main", family: "chips", parts: [P("yam_fried", sizeOf(n))] };
   if (/chips|potato/.test(n)) return { role: "main", family: "chips", parts: [P("potato_fried", sizeOf(n))] };
 
+  // Plain suya (Suya Spot sells it by price, e.g. "Suya (₦1,000)"); suya pizza is handled above.
+  // The suya component carries groundnut: yaji spice usually contains it.
+  if (/\bsuya\b/.test(n)) return { role: "main", family: "suya", parts: [P("suya", clamp(price / 1000, 0.5, 2.5))], minHeat };
+
   // ---- single proteins and sides ----
   if (/chicken/.test(n)) return { role: "extra", parts: [P("chicken", byPrice("chicken", price), roastVendor ? "roasted" : undefined)], minHeat };
   if (/fish/.test(n)) {

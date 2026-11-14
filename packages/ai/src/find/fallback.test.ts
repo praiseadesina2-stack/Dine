@@ -58,3 +58,13 @@ test("real menu names are not mistaken for instructions", async () => {
   const { primeCatalogue } = await import("./prime-catalogue.js");
   assert.deepEqual(primeCatalogue().rejected, []);
 });
+
+test("keyword mode shows allergen cautions under each meal", async () => {
+  const { primeCatalogue } = await import("./prime-catalogue.js");
+  const { VENDORS } = await import("../../../../apps/api/src/data/vendors.js");
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.AI_PROVIDER_API_KEY;
+  const agent = new FindAgent({ catalogue: primeCatalogue({ extraVendors: VENDORS }), reviews: null, apiKey: "" });
+  const text = formatFindResult(await agent.find("suya"));
+  assert.match(text, /Suya[^\n]*\n   ⚠ May contain: groundnut/);
+});

@@ -351,14 +351,20 @@ const ALLERGEN_LABEL: Record<Allergen, string> = {
   groundnut: "groundnut", tree_nut: "tree nuts", egg: "egg", fish: "fish", shellfish: "shellfish", dairy: "dairy", gluten: "gluten (wheat)",
 };
 
+/** Allergen and pork cautions for a meal profile, as shown to students. */
+export function warningsOf(p: Pick<Meal["profile"], "allergens" | "porkPossible">): string[] {
+  const warnings: string[] = [];
+  if (p.allergens.size) warnings.push(`May contain: ${[...p.allergens].map((a) => ALLERGEN_LABEL[a]).join(", ")}`);
+  if (p.porkPossible) warnings.push("Has sausage or pepperoni; ask the vendor if it contains pork");
+  return warnings;
+}
+
 function toSuggestion(meal: Meal, ctx: Ctx): MealSuggestion {
   const p = meal.profile;
   const prime = meal.source === "prime";
   const reasons = score(meal, ctx).reasons;
   if (prime) reasons.push(`${naira(meal.total)} of your ${naira(ctx.budget)} budget`);
-  const warnings: string[] = [];
-  if (p.allergens.size) warnings.push(`May contain: ${[...p.allergens].map((a) => ALLERGEN_LABEL[a]).join(", ")}`);
-  if (p.porkPossible) warnings.push("Has sausage or pepperoni; ask the vendor if it contains pork");
+  const warnings = warningsOf(p);
   return {
     key: meal.key,
     name: prime ? meal.name : campusTitle(meal),

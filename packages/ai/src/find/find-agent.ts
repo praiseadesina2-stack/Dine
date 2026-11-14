@@ -11,6 +11,8 @@ import { checkGrounding, type ProposedPick } from "./grounding.js";
 import { preSearch } from "./presearch.js";
 import { declarationsFor, FINAL_ANSWER, runReadTool, ToolArgError } from "./tools.js";
 import { loadPrompt } from "../prompts.js";
+import { warningsOf } from "../recommend/engine.js";
+import { parseItem, profileOf } from "../recommend/profile.js";
 
 export const DEFAULT_MODEL = "gemini-3.8-flash";
 
@@ -385,8 +387,21 @@ export function formatFallbackReply(result: Extract<FindResult, { ok: false }>):
       ? "I can't give a full answer right now, but these are within your budget:"
       : "I can't give a full answer right now, but these match what you asked for:",
   ];
-  meals.forEach((m, i) => lines.push("", `${i + 1}. ${m.name} (${m.vendorName}) - ${naira(m.priceKobo)}`));
+  meals.forEach((m, i) => {
+    lines.push("", `${i + 1}. ${m.name} (${m.vendorName}) - ${naira(m.priceKobo)}`);
+    for (const w of cautionsFor(m)) lines.push(`   ⚠ ${w}`);
+  });
   return lines.join("\n");
+}
+
+/** Allergen and pork cautions from the recommender's food rules; none when the item isn't understood. */
+export function cautionsFor(meal: MealRecord): string[] {
+  try {
+    const parsed = parseItem(meal.vendorName, meal.name, meal.priceKobo / 100);
+    return parsed.parts.length ? warningsOf(profileOf(parsed.parts, parsed.minHeat)) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Telegram text for any /find result: the model's answer, or the keyword fallback. */
