@@ -1,0 +1,2335 @@
+{
+ "source": "Context/Prime Bot Crawl Map.html (crawl of @orderfromprimebot, 2026-10-19). Real screens; cart and checkout were never crawled.",
+ "start": "ecb5a899a492",
+ "screens": [
+  {
+   "id": "ecb5a899a492",
+   "kind": "home",
+   "label": "Start · Hi mark!",
+   "text": "Hi mark! 👋",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "I'm Hungry 🍽️",
+     "to": "eae41d40cfea"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "🛒 My Cart",
+     "to": "532d8e164469"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "💰 Wallet"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "👤 My Profile"
+    },
+    {
+     "row": 2,
+     "col": 1,
+     "label": "💬 Talk to Us"
+    }
+   ]
+  },
+  {
+   "id": "29d9787e79bb",
+   "kind": "home",
+   "label": "Start · Good afternoon!",
+   "text": "Good afternoon! 👋\n\nThe important question of the day: what are we eating? 😋",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "🍽 See all vendors",
+     "to": "eae41d40cfea"
+    }
+   ]
+  },
+  {
+   "id": "eae41d40cfea",
+   "kind": "locations",
+   "label": "Choose location",
+   "text": "📍 Where do you want to order from?",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Inside Cafeteria · 1 vendors open",
+     "to": "c26d48b05a76"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Outside Cafeteria · 13 vendors open",
+     "to": "17d75564805c"
+    }
+   ]
+  },
+  {
+   "id": "17d75564805c",
+   "kind": "vendorlist",
+   "label": "Outside vendors · p1",
+   "text": "🍽 Choose a vendor and let's get ordering!\n\n6:33 Pizza Republic · 🟢 Active\nSells Pizza, Chicken BBQ Pizza, Chicken Suya Pizza, Burger\nFrom ₦2000\n\nBread Warmer · 🟢 Active\nSells Bread Warmer, Jumbo Bread Warmer, Sausage\nFrom ₦1800\n\nBreakthrough Pizza · 🟢 Active\nSells Pizza, Pizza Burger, Pepperoni Pizza, Supreme Pizza\nFrom ₦1500\n\nBurritos · 🟢 Active\nSells Chicken & Sausage Packs, Chicken, Burrito, Sausage\nFrom ₦1000\n\nCU Pizza · 🟢 Active\nSells Pizza, Pepperoni Pizza, Pizza Deluxe, Chicken Lover Pizza\nFrom ₦2500\n\nPage 1 of 3\n\n👇 Tap a vendor to see their menu",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "6:33 Pizza Republic"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Bread Warmer"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Breakthrough Pizza"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Burritos"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "CU Pizza"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "◀ Back to Locations",
+     "to": "eae41d40cfea"
+    },
+    {
+     "row": 5,
+     "col": 1,
+     "label": "Next ▶",
+     "to": "f1b0aff02f1e"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "🔍 Find a meal or vendor"
+    }
+   ]
+  },
+  {
+   "id": "f1b0aff02f1e",
+   "kind": "vendorlist",
+   "label": "Outside vendors · p2",
+   "text": "🍽 Choose a vendor and let's get ordering!\n\nCU Pizza Burger · 🟢 Active\nSells Pizza Burger, Beef Pizza Burger, Chicken Pizza Burger, Sausage\nFrom ₦1500\n\nCU Spicy · 🟢 Active\nSells Boli, Potato, Fish, Chicken\nFrom ₦2000\n\nDG and G Boli · 🟢 Active\nSells Boli, Fish, Egg, Sausage\nFrom ₦1500\n\nDelish Yamarita · 🟢 Active\nSells Yamarita, Kebab, Egg, Pepper Stew\nFrom ₦2200\n\nEmabuop.G Foods · 🟢 Active\nSells Boli, Yam & Potato, Egg Sauce, Fish Sauce, Chicken\nFrom ₦1700\n\nPage 2 of 3\n\n👇 Tap a vendor to see their menu",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "CU Pizza Burger"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "CU Spicy"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "DG and G Boli"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Delish Yamarita",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "Emabuop.G Foods"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "◀ Back to Locations"
+    },
+    {
+     "row": 5,
+     "col": 1,
+     "label": "◀ Prev"
+    },
+    {
+     "row": 5,
+     "col": 2,
+     "label": "Next ▶",
+     "to": "feba3abfb475"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "🔍 Find a meal or vendor"
+    }
+   ]
+  },
+  {
+   "id": "feba3abfb475",
+   "kind": "vendorlist",
+   "label": "Outside vendors · p3",
+   "text": "🍽 Choose a vendor and let's get ordering!\n\nEvelyn Concept · 🟢 Active\nSells Fried Yam, Potato Chips, Yam & Potato Chips, Egg Sauce\nFrom ₦1500\n\nGrandpa Chips · 🟢 Active\nSells Chips, Chicken, Fish, Egg Sauce\nFrom ₦1500\n\nSlash Shawarma · 🟢 Active\nSells Shawarma, Jumbo Shawarma, Sausage, Chicken\nFrom ₦2000\n\nFish and Chips · 🔴 Closed\nSells Fish and Chips, Catfish, Croaker, Tilapia\nFrom ₦2000\n\nPage 3 of 3\n\n👇 Tap a vendor to see their menu",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Evelyn Concept"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Grandpa Chips",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Slash Shawarma",
+     "to": "2ceee5781b2a"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Fish and Chips"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "◀ Back to Locations"
+    },
+    {
+     "row": 4,
+     "col": 1,
+     "label": "◀ Prev"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "🔍 Find a meal or vendor"
+    }
+   ]
+  },
+  {
+   "id": "c26d48b05a76",
+   "kind": "vendorlist",
+   "label": "Inside vendors · p1",
+   "text": "🍽 Choose a vendor and let's get ordering!\n\nChoice Waffles · 🟢 Active\nSells Waffles, Vanilla Waffle, Chocolate Waffle, Strawberry Waffle\nFrom ₦600\n\nWaffledom · 🔴 Closed\nSells Waffles, Nutella, Ice Cream, Oreos\nFrom ₦500\n\n👇 Tap a vendor to see their menu",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choice Waffles",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Waffledom",
+     "to": "5dfdcfe007f1"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "◀ Back to Locations",
+     "to": "eae41d40cfea"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "🔍 Find a meal or vendor"
+    }
+   ]
+  },
+  {
+   "id": "5dfdcfe007f1",
+   "kind": "vendor",
+   "label": "Waffledom · p1/2",
+   "text": "Waffledom · 🔴 Closed\n\nCircle Waffle — ₦700\n\nEgg — ₦300\n\nIce Cream (Topping) — ₦800\n\nJam (Topping) — ₦800\n\nM&M's (Topping) — ₦500\n\nMarshmallow (Topping) — ₦500\n\nNutella (Topping) — ₦1000\n\nOreos (Topping) — ₦500\n\nPeanut Butter (Topping) — ₦800\n\nSausage — ₦300\n\nPage 1 of 2\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Circle Waffle"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Egg"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose Ice Cream (Topping)"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Choose Jam (Topping)"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "Choose M&M's (Topping)"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "Choose Marshmallow (Topping)"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "Choose Nutella (Topping)"
+    },
+    {
+     "row": 7,
+     "col": 0,
+     "label": "Choose Oreos (Topping)"
+    },
+    {
+     "row": 8,
+     "col": 0,
+     "label": "Choose Peanut Butter (Topping)"
+    },
+    {
+     "row": 9,
+     "col": 0,
+     "label": "Choose Sausage"
+    },
+    {
+     "row": 10,
+     "col": 0,
+     "label": "◀ Back to Vendors",
+     "to": "c26d48b05a76"
+    },
+    {
+     "row": 10,
+     "col": 1,
+     "label": "Next ▶",
+     "to": "23dfff8b5905"
+    },
+    {
+     "row": 11,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "23dfff8b5905",
+   "kind": "vendor",
+   "label": "Waffledom · p2/2",
+   "text": "Waffledom · 🔴 Closed\n\nSprinkles (Topping) — ₦500\n\nSquare Waffle — ₦500\n\nWhite & Black Chocolate Chips (Topping) — ₦700\n\nPage 2 of 2\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Sprinkles (Topping)"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Square Waffle"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose White & Black Chocolate Chips (Topping)"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "◀ Back to Vendors"
+    },
+    {
+     "row": 3,
+     "col": 1,
+     "label": "◀ Prev"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "2ceee5781b2a",
+   "kind": "vendor",
+   "label": "Slash Shawarma",
+   "text": "Slash Shawarma · 🟢 Active\n\nJumbo Shawarma + 3 Sausages & Extra Chicken — ₦4000\n\nShawarma + 1 Sausage — ₦2000\n\nShawarma + 2 Sausages — ₦2500\n\nShawarma + 2 Sausages & Extra Chicken — ₦3000\n\nShawarma + 3 Sausages & Extra Chicken — ₦3500\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Jumbo Shawarma + 3 Sausages & Extra Chicken",
+     "to": "07ea2a949f65"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Shawarma + 1 Sausage",
+     "to": "e0c324279c85"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose Shawarma + 2 Sausages",
+     "to": "0b2179126cc5"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Choose Shawarma + 2 Sausages & Extra Chicken",
+     "to": "35d42f505be2"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "Choose Shawarma + 3 Sausages & Extra Chicken",
+     "to": "6728b549966b"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "◀ Back to Vendors",
+     "to": "17d75564805c"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "6728b549966b",
+   "kind": "item",
+   "label": "Shawarma + 3 Sausages & Extra Chicken",
+   "text": "Shawarma + 3 Sausages & Extra Chicken\n\n\nPrice: ₦3500\n\nQty: 1\n\nTotal: ₦3500",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3500"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "2ceee5781b2a"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "35d42f505be2",
+   "kind": "item",
+   "label": "Shawarma + 2 Sausages & Extra Chicken",
+   "text": "Shawarma + 2 Sausages & Extra Chicken\n\n\nPrice: ₦3000\n\nQty: 1\n\nTotal: ₦3000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "0b2179126cc5",
+   "kind": "item",
+   "label": "Shawarma + 2 Sausages",
+   "text": "Shawarma + 2 Sausages\n\n\nPrice: ₦2500\n\nQty: 1\n\nTotal: ₦2500",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2500"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "2ceee5781b2a"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "e0c324279c85",
+   "kind": "item",
+   "label": "Shawarma + 1 Sausage",
+   "text": "Shawarma + 1 Sausage\n\n\nPrice: ₦2000\n\nQty: 1\n\nTotal: ₦2000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "2ceee5781b2a"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "07ea2a949f65",
+   "kind": "item",
+   "label": "Jumbo Shawarma + 3 Sausages & Extra Chicken",
+   "text": "Jumbo Shawarma + 3 Sausages & Extra Chicken\n\n\nPrice: ₦4000\n\nQty: 1\n\nTotal: ₦4000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦4000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "2ceee5781b2a"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "f9f1e1c4d12c",
+   "kind": "vendor",
+   "label": "Grandpa Chips · p1/2",
+   "text": "Grandpa Chips · 🟢 Active\n\nBeef — ₦200\n\nChicken (Large) — ₦2000\n\nChicken (Regular) — ₦1500\n\nChips (Extra Large) — ₦2500\n\nChips (Large) — ₦2000\n\nChips (Regular) — ₦1800\n\nChips (Small) — ₦1500\n\nEgg — ₦300\n\nEgg Sauce — ₦500\n\nFish — ₦1800\n\nPage 1 of 2\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Beef",
+     "to": "46eeaf21808c"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Chicken (Large)",
+     "to": "70e3b4767e06"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose Chicken (Regular)",
+     "to": "1e0434dcc0e8"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Choose Chips (Extra Large)",
+     "to": "c337b5a3a2c7"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "Choose Chips (Large)",
+     "to": "4fb8f106af3c"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "Choose Chips (Regular)",
+     "to": "803b4fa96db4"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "Choose Chips (Small)",
+     "to": "2c037d35f3e8"
+    },
+    {
+     "row": 7,
+     "col": 0,
+     "label": "Choose Egg",
+     "to": "f87513e073e3"
+    },
+    {
+     "row": 8,
+     "col": 0,
+     "label": "Choose Egg Sauce",
+     "to": "735e60b76bcf"
+    },
+    {
+     "row": 9,
+     "col": 0,
+     "label": "Choose Fish",
+     "to": "822ceb9d40b3"
+    },
+    {
+     "row": 10,
+     "col": 0,
+     "label": "◀ Back to Vendors",
+     "to": "17d75564805c"
+    },
+    {
+     "row": 10,
+     "col": 1,
+     "label": "Next ▶",
+     "to": "8c239b7a40c2"
+    },
+    {
+     "row": 11,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "8c239b7a40c2",
+   "kind": "vendor",
+   "label": "Grandpa Chips · p2/2",
+   "text": "Grandpa Chips · 🟢 Active\n\nGizzard — ₦500\n\nPlastic Pack — ₦200\n\nSausage — ₦250\n\nPage 2 of 2\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Gizzard",
+     "to": "1192735b1fa8"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Plastic Pack",
+     "to": "fe5014fa2fc7"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose Sausage",
+     "to": "7969e8aa9925"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "◀ Back to Vendors"
+    },
+    {
+     "row": 3,
+     "col": 1,
+     "label": "◀ Prev"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "7969e8aa9925",
+   "kind": "item",
+   "label": "Sausage",
+   "text": "Sausage\n\n\nPrice: ₦250\n\nQty: 1\n\nTotal: ₦250",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦250"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "fe5014fa2fc7",
+   "kind": "item",
+   "label": "Plastic Pack",
+   "text": "Plastic Pack\n\n\nPrice: ₦200\n\nQty: 1\n\nTotal: ₦200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "1192735b1fa8",
+   "kind": "item",
+   "label": "Gizzard",
+   "text": "Gizzard\n\n\nPrice: ₦500\n\nQty: 1\n\nTotal: ₦500",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦500"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "822ceb9d40b3",
+   "kind": "item",
+   "label": "Fish",
+   "text": "Fish\n\n\nPrice: ₦1800\n\nQty: 1\n\nTotal: ₦1800",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦1800"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "735e60b76bcf",
+   "kind": "item",
+   "label": "Egg Sauce",
+   "text": "Egg Sauce\n\n\nPrice: ₦500\n\nQty: 1\n\nTotal: ₦500",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦500"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "f87513e073e3",
+   "kind": "item",
+   "label": "Egg",
+   "text": "Egg\n\n\nPrice: ₦300\n\nQty: 1\n\nTotal: ₦300",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦300"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "2c037d35f3e8",
+   "kind": "item",
+   "label": "Chips (Small)",
+   "text": "Chips (Small)\n\n\nPrice: ₦1500\nPack: ₦200 each\n\nQty: 1\nPacks: 1\n\nTotal: ₦1700",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦1500"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "1 pack × ₦200"
+    },
+    {
+     "row": 1,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 2,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "803b4fa96db4",
+   "kind": "item",
+   "label": "Chips (Regular)",
+   "text": "Chips (Regular)\n\n\nPrice: ₦1800\nPack: ₦200 each\n\nQty: 1\nPacks: 1\n\nTotal: ₦2000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦1800"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "1 pack × ₦200"
+    },
+    {
+     "row": 1,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 2,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "4fb8f106af3c",
+   "kind": "item",
+   "label": "Chips (Large)",
+   "text": "Chips (Large)\n\n\nPrice: ₦2000\nPack: ₦200 each\n\nQty: 1\nPacks: 1\n\nTotal: ₦2200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "1 pack × ₦200"
+    },
+    {
+     "row": 1,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 2,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "c337b5a3a2c7",
+   "kind": "item",
+   "label": "Chips (Extra Large)",
+   "text": "Chips (Extra Large)\n\n\nPrice: ₦2500\nPack: ₦200 each\n\nQty: 1\nPacks: 1\n\nTotal: ₦2700",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2500"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "1 pack × ₦200"
+    },
+    {
+     "row": 1,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 2,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "1e0434dcc0e8",
+   "kind": "item",
+   "label": "Chicken (Regular)",
+   "text": "Chicken (Regular)\n\n\nPrice: ₦1500\n\nQty: 1\n\nTotal: ₦1500",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦1500"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "70e3b4767e06",
+   "kind": "item",
+   "label": "Chicken (Large)",
+   "text": "Chicken (Large)\n\n\nPrice: ₦2000\n\nQty: 1\n\nTotal: ₦2000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "46eeaf21808c",
+   "kind": "item",
+   "label": "Beef",
+   "text": "Beef\n\n\nPrice: ₦200\n\nQty: 1\n\nTotal: ₦200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "f9f1e1c4d12c"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "a194fec9edb3",
+   "kind": "vendor",
+   "label": "Delish Yamarita · p1/2",
+   "text": "Delish Yamarita · 🟢 Active\n\nDelish Pack + 1 Kebab — ₦2200\n\nDelish Pack + 2 Kebabs — ₦2600\n\nDelish Pack + 3 Kebabs — ₦3000\n\nDelish Pack + 4 Kebabs — ₦3400\n\nDelish Pack + 5 Kebabs — ₦3800\n\nEgg — ₦300\n\nKings Pack + 1 Kebab — ₦3000\n\nKings Pack + 2 Kebabs — ₦3400\n\nKings Pack + 3 Kebabs — ₦3800\n\nKings Pack + 4 Kebabs — ₦4200\n\nPage 1 of 2\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Delish Pack + 1 Kebab",
+     "to": "e5be5704cd5a"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Delish Pack + 2 Kebabs",
+     "to": "23186457e3ec"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose Delish Pack + 3 Kebabs",
+     "to": "c3e94d431064"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Choose Delish Pack + 4 Kebabs",
+     "to": "74a1b0d2919e"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "Choose Delish Pack + 5 Kebabs",
+     "to": "b26703f530ff"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "Choose Egg",
+     "to": "97532fbed7b1"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "Choose Kings Pack + 1 Kebab",
+     "to": "4d438ab359d9"
+    },
+    {
+     "row": 7,
+     "col": 0,
+     "label": "Choose Kings Pack + 2 Kebabs",
+     "to": "57b189373fc3"
+    },
+    {
+     "row": 8,
+     "col": 0,
+     "label": "Choose Kings Pack + 3 Kebabs",
+     "to": "cfff2c1a8fbf"
+    },
+    {
+     "row": 9,
+     "col": 0,
+     "label": "Choose Kings Pack + 4 Kebabs",
+     "to": "4f1f383ec86b"
+    },
+    {
+     "row": 10,
+     "col": 0,
+     "label": "◀ Back to Vendors",
+     "to": "17d75564805c"
+    },
+    {
+     "row": 10,
+     "col": 1,
+     "label": "Next ▶",
+     "to": "5f4d0cbedfc2"
+    },
+    {
+     "row": 11,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "5f4d0cbedfc2",
+   "kind": "vendor",
+   "label": "Delish Yamarita · p2/2",
+   "text": "Delish Yamarita · 🟢 Active\n\nKings Pack + 5 Kebabs — ₦4600\n\nPepper Stew — ₦300\n\nPonmo — ₦300\n\nRoyal Pack + 1 Kebab — ₦2600\n\nRoyal Pack + 2 Kebabs — ₦3000\n\nRoyal Pack + 3 Kebabs — ₦3400\n\nRoyal Pack + 4 Kebabs — ₦3800\n\nRoyal Pack + 5 Kebabs — ₦4200\n\nSausage — ₦300\n\nPage 2 of 2\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Kings Pack + 5 Kebabs",
+     "to": "82bc27431514"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Pepper Stew",
+     "to": "095426924fd6"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose Ponmo",
+     "to": "b79097f3f2e0"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Choose Royal Pack + 1 Kebab",
+     "to": "da939e0c2ca7"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "Choose Royal Pack + 2 Kebabs",
+     "to": "be928c1273e0"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "Choose Royal Pack + 3 Kebabs",
+     "to": "a730b0971a4e"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "Choose Royal Pack + 4 Kebabs",
+     "to": "80b2c4fb4bab"
+    },
+    {
+     "row": 7,
+     "col": 0,
+     "label": "Choose Royal Pack + 5 Kebabs",
+     "to": "a755f9526897"
+    },
+    {
+     "row": 8,
+     "col": 0,
+     "label": "Choose Sausage",
+     "to": "7e4faf430203"
+    },
+    {
+     "row": 9,
+     "col": 0,
+     "label": "◀ Back to Vendors"
+    },
+    {
+     "row": 9,
+     "col": 1,
+     "label": "◀ Prev"
+    },
+    {
+     "row": 10,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "7e4faf430203",
+   "kind": "item",
+   "label": "Sausage",
+   "text": "Sausage\n\n\nPrice: ₦300\n\nQty: 1\n\nTotal: ₦300",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦300"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "a755f9526897",
+   "kind": "item",
+   "label": "Royal Pack + 5 Kebabs",
+   "text": "Royal Pack + 5 Kebabs\n\n\nPrice: ₦4200\n\nQty: 1\n\nTotal: ₦4200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦4200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "80b2c4fb4bab",
+   "kind": "item",
+   "label": "Royal Pack + 4 Kebabs",
+   "text": "Royal Pack + 4 Kebabs\n\n\nPrice: ₦3800\n\nQty: 1\n\nTotal: ₦3800",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3800"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "a730b0971a4e",
+   "kind": "item",
+   "label": "Royal Pack + 3 Kebabs",
+   "text": "Royal Pack + 3 Kebabs\n\n\nPrice: ₦3400\n\nQty: 1\n\nTotal: ₦3400",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3400"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "be928c1273e0",
+   "kind": "item",
+   "label": "Royal Pack + 2 Kebabs",
+   "text": "Royal Pack + 2 Kebabs\n\n\nPrice: ₦3000\n\nQty: 1\n\nTotal: ₦3000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "da939e0c2ca7",
+   "kind": "item",
+   "label": "Royal Pack + 1 Kebab",
+   "text": "Royal Pack + 1 Kebab\n\n\nPrice: ₦2600\n\nQty: 1\n\nTotal: ₦2600",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2600"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "b79097f3f2e0",
+   "kind": "item",
+   "label": "Ponmo",
+   "text": "Ponmo\n\n\nPrice: ₦300\n\nQty: 1\n\nTotal: ₦300",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦300"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "095426924fd6",
+   "kind": "item",
+   "label": "Pepper Stew",
+   "text": "Pepper Stew\n\n\nPrice: ₦300\n\nQty: 1\n\nTotal: ₦300",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦300"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "82bc27431514",
+   "kind": "item",
+   "label": "Kings Pack + 5 Kebabs",
+   "text": "Kings Pack + 5 Kebabs\n\n\nPrice: ₦4600\n\nQty: 1\n\nTotal: ₦4600",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦4600"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "4f1f383ec86b",
+   "kind": "item",
+   "label": "Kings Pack + 4 Kebabs",
+   "text": "Kings Pack + 4 Kebabs\n\n\nPrice: ₦4200\n\nQty: 1\n\nTotal: ₦4200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦4200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "cfff2c1a8fbf",
+   "kind": "item",
+   "label": "Kings Pack + 3 Kebabs",
+   "text": "Kings Pack + 3 Kebabs\n\n\nPrice: ₦3800\n\nQty: 1\n\nTotal: ₦3800",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3800"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "57b189373fc3",
+   "kind": "item",
+   "label": "Kings Pack + 2 Kebabs",
+   "text": "Kings Pack + 2 Kebabs\n\n\nPrice: ₦3400\n\nQty: 1\n\nTotal: ₦3400",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3400"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "4d438ab359d9",
+   "kind": "item",
+   "label": "Kings Pack + 1 Kebab",
+   "text": "Kings Pack + 1 Kebab\n\n\nPrice: ₦3000\n\nQty: 1\n\nTotal: ₦3000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "97532fbed7b1",
+   "kind": "item",
+   "label": "Egg",
+   "text": "Egg\n\n\nPrice: ₦300\n\nQty: 1\n\nTotal: ₦300",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦300"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "b26703f530ff",
+   "kind": "item",
+   "label": "Delish Pack + 5 Kebabs",
+   "text": "Delish Pack + 5 Kebabs\n\n\nPrice: ₦3800\n\nQty: 1\n\nTotal: ₦3800",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3800"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "74a1b0d2919e",
+   "kind": "item",
+   "label": "Delish Pack + 4 Kebabs",
+   "text": "Delish Pack + 4 Kebabs\n\n\nPrice: ₦3400\n\nQty: 1\n\nTotal: ₦3400",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3400"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "c3e94d431064",
+   "kind": "item",
+   "label": "Delish Pack + 3 Kebabs",
+   "text": "Delish Pack + 3 Kebabs\n\n\nPrice: ₦3000\n\nQty: 1\n\nTotal: ₦3000",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦3000"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "23186457e3ec",
+   "kind": "item",
+   "label": "Delish Pack + 2 Kebabs",
+   "text": "Delish Pack + 2 Kebabs\n\n\nPrice: ₦2600\n\nQty: 1\n\nTotal: ₦2600",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2600"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "e5be5704cd5a",
+   "kind": "item",
+   "label": "Delish Pack + 1 Kebab",
+   "text": "Delish Pack + 1 Kebab\n\n\nPrice: ₦2200\n\nQty: 1\n\nTotal: ₦2200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦2200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "a194fec9edb3"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "65b6db80ed6f",
+   "kind": "vendor",
+   "label": "Choice Waffles",
+   "text": "Choice Waffles · 🟢 Active\n\nChocolate Waffle (One Circle) — ₦700\n\nEgg Sauce — ₦200\n\nFried Egg — ₦150\n\nPlastic Pack — ₦200\n\nSausage (Cut & Peppered) — ₦200\n\nStrawberry Waffle (One Circle) — ₦700\n\nVanilla Waffle (One Circle) — ₦600\n\n👇 Tap a menu to add to cart",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Choose Chocolate Waffle (One Circle)",
+     "to": "ece9a13b7369"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "Choose Egg Sauce",
+     "to": "27763fe1e2c6"
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "label": "Choose Fried Egg",
+     "to": "de64eaa365e7"
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "label": "Choose Plastic Pack",
+     "to": "4cba49fbf822"
+    },
+    {
+     "row": 4,
+     "col": 0,
+     "label": "Choose Sausage (Cut & Peppered)",
+     "to": "f9cd79ee8748"
+    },
+    {
+     "row": 5,
+     "col": 0,
+     "label": "Choose Strawberry Waffle (One Circle)",
+     "to": "c98d284e4d4a"
+    },
+    {
+     "row": 6,
+     "col": 0,
+     "label": "Choose Vanilla Waffle (One Circle)",
+     "to": "40ca10515c10"
+    },
+    {
+     "row": 7,
+     "col": 0,
+     "label": "◀ Back to Vendors",
+     "to": "c26d48b05a76"
+    },
+    {
+     "row": 8,
+     "col": 0,
+     "label": "🔍 Search vendor menu"
+    }
+   ]
+  },
+  {
+   "id": "40ca10515c10",
+   "kind": "item",
+   "label": "Vanilla Waffle (One Circle)",
+   "text": "Vanilla Waffle (One Circle)\n\n\nPrice: ₦600\n\nQty: 1\n\nTotal: ₦600",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦600"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "c98d284e4d4a",
+   "kind": "item",
+   "label": "Strawberry Waffle (One Circle)",
+   "text": "Strawberry Waffle (One Circle)\n\n\nPrice: ₦700\n\nQty: 1\n\nTotal: ₦700",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦700"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "f9cd79ee8748",
+   "kind": "item",
+   "label": "Sausage (Cut & Peppered)",
+   "text": "Sausage (Cut & Peppered)\n\n\nPrice: ₦200\n\nQty: 1\n\nTotal: ₦200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "4cba49fbf822",
+   "kind": "item",
+   "label": "Plastic Pack",
+   "text": "Plastic Pack\n\n\nPrice: ₦200\n\nQty: 1\n\nTotal: ₦200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "de64eaa365e7",
+   "kind": "item",
+   "label": "Fried Egg",
+   "text": "Fried Egg\n\n\nPrice: ₦150\n\nQty: 1\n\nTotal: ₦150",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦150"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "27763fe1e2c6",
+   "kind": "item",
+   "label": "Egg Sauce",
+   "text": "Egg Sauce\n\n\nPrice: ₦200\n\nQty: 1\n\nTotal: ₦200",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦200"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "ece9a13b7369",
+   "kind": "item",
+   "label": "Chocolate Waffle (One Circle)",
+   "text": "Chocolate Waffle (One Circle)\n\n\nPrice: ₦700\n\nQty: 1\n\nTotal: ₦700",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "−"
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "label": "1 × ₦700"
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "label": "+"
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "label": "◀ Back",
+     "to": "65b6db80ed6f"
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "label": "Add to cart ✓"
+    }
+   ]
+  },
+  {
+   "id": "532d8e164469",
+   "kind": "account",
+   "label": "Cart (empty)",
+   "text": "Nothing here yet 🫠\n\nTap below to start ordering 👇",
+   "buttons": [
+    {
+     "row": 0,
+     "col": 0,
+     "label": "Place an Order 😉"
+    }
+   ]
+  }
+ ]
+}

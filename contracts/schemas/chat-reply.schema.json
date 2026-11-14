@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dine.local/contracts/chat-reply.schema.json",
+  "title": "ChatReply",
+  "description": "The model's final reply in a chat turn (the final_answer tool). Every price shown comes from a pick's meal_id; every quality claim cites review_ids. The AI layer runs the grounding check before sending.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["message", "picks"],
+  "properties": {
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "1-3 short sentences. No prices and no quality claims; those belong in picks."
+    },
+    "picks": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["meal_id", "reason"],
+        "properties": {
+          "meal_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 140 },
+          "review_ids": {
+            "type": "array",
+            "maxItems": 3,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        }
+      }
+    }
+  }
+}

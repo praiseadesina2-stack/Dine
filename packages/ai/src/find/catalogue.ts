@@ -6,6 +6,7 @@
  * @dine/database (vendors, meals, reviews) can replace it without touching the
  * agent, tools or grounding check.
  */
+import { looksLikeInstruction } from "./untrusted.js";
 
 export interface MealRecord {
   mealId: string;
@@ -66,11 +67,23 @@ const tokenize = (s: string) =>
 export class InMemoryCatalogue implements Catalogue {
   private vendors = new Map<string, VendorRecord>();
   private meals = new Map<string, MealRecord>();
+  /** Menu text left out because it reads like an instruction to an AI (see untrusted.ts). Log it for a human. */
+  readonly rejected: { vendorId: string; field: "item" | "description"; text: string }[] = [];
 
   constructor(source: SourceVendor[]) {
     for (const v of source) {
       const active = v.status === "active";
-      const meals: MealRecord[] = v.items.map((item) => ({
+      const items = v.items.filter((item) => {
+        if (!looksLikeInstruction(item.name)) return true;
+        this.rejected.push({ vendorId: v.id, field: "item", text: item.name });
+        return false;
+      });
+      let description = v.sampleDescription;
+      if (looksLikeInstruction(description)) {
+        this.rejected.push({ vendorId: v.id, field: "description", text: description! });
+        description = undefined;
+      }
+      const meals: MealRecord[] = items.map((item) => ({
         mealId: `${v.id}:${slug(item.name)}`,
         vendorId: v.id,
         vendorName: v.name,
@@ -82,7 +95,7 @@ export class InMemoryCatalogue implements Catalogue {
         vendorId: v.id,
         name: v.name,
         active,
-        description: v.sampleDescription,
+        description,
         meals,
       });
       for (const m of meals) this.meals.set(m.mealId, m);

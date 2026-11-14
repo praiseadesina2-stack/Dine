@@ -23,18 +23,21 @@ async function runTestOrder() {
   const result = await agent.placeOrder({
     botUsername: process.env.PRIME_BOT_USERNAME || "orderfromprimebot",
     vendorName: "Delish Yamarita",
-    itemName: "Delish Pack + 1 Kebab"
+    itemName: "Delish Pack + 1 Kebab",
+    expectedPriceKobo: 220_000, // ₦2,200 on the crawl; the order stops if Prime shows another price
+    location: "outside_cafeteria",
   });
 
   console.log("\n--- Agent Execution Result ---");
   console.log("Success:", result.success);
   console.log("Message:", result.message);
+  console.log("Stage:", result.stage, result.code ? `(${result.code})` : "", result.cartTouched ? "· Prime cart was changed" : "");
+  for (const step of result.stepsCompleted) console.log("  -", step);
   if (result.paystackUrl) {
     console.log("🎯 Paystack Checkout Link Acquired:", result.paystackUrl);
   }
-  if (result.rawResponse) {
-    console.log("\nRaw Bot Response:\n", result.rawResponse);
-  }
+  if (result.orderRef) console.log("Prime order ref:", result.orderRef);
+  if (result.totalKobo != null) console.log("Prime total: ₦" + result.totalKobo / 100);
 }
 
 runTestOrder().catch(console.error);

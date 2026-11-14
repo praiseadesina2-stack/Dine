@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dine.local/contracts/policy-decision.schema.json",
+  "title": "PolicyDecision",
+  "description": "Output of the backend policy service for one order attempt. DRAFT: see policy.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "reasons", "amount_kobo", "policy_version"],
+  "properties": {
+    "decision": { "enum": ["allow", "block", "ask_user"] },
+    "reasons": {
+      "type": "array",
+      "description": "Every rule that failed. Empty only when decision is allow.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code"],
+        "properties": {
+          "code": {
+            "enum": [
+              "PAYMENTS_DISABLED",
+              "PAUSED",
+              "NOT_APPROVED",
+              "DUPLICATE",
+              "VENDOR_NOT_VERIFIED",
+              "MEAL_UNAVAILABLE",
+              "PRICE_STALE",
+              "PRICE_CHANGED",
+              "CAP_ORDER",
+              "CAP_DAY",
+              "CAP_WEEK",
+              "INSUFFICIENT_BALANCE",
+              "OUTSIDE_WINDOW"
+            ]
+          },
+          "detail": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    "amount_kobo": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Amount to reserve. 0 unless decision is allow."
+    },
+    "policy_version": { "type": "string", "pattern": "^v\\d+$" }
+  }
+}
