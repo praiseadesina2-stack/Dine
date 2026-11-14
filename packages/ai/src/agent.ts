@@ -1,8 +1,21 @@
+/**
+ * Dine ordering agent (contracts/ordering.md): places an order on Prime's Telegram
+ * bot for a student, through a Dine-owned Telegram session. Code, not a model.
+ *
+ * The backend calls placeOrder() only after the policy check allowed the order and
+ * the student's wallet amount is reserved. The flow itself lives in
+ * order/prime-flow.ts (exact button matching, price check, fail closed); this file
+ * is the Telegram driver plus a lock so one session runs one order at a time.
+ */
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
+import {
+  runOrderFlow,
+  type BotButton, type BotScreen, type OrderFailure, type OrderStage, type OrderTarget as FlowTarget, type PrimeBot,
+} from "./order/prime-flow.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,21 +23,33 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
-export interface OrderTarget {
+export interface OrderTarget extends FlowTarget {
   botUsername?: string; // defaults to process.env.PRIME_BOT_USERNAME || "orderfromprimebot"
-  vendorName: string;   // e.g. "Delish Yamarita"
-  itemName: string;     // e.g. "Delish Pack + 1 Kebab"
-  hall?: string;
-  room?: string;
 }
 
 export interface AgentOrderResult {
+  /** True only when Prime gave a payment link or confirmed the order. */
   success: boolean;
   message: string;
+  /** Set when success is false. */
+  code?: OrderFailure;
+  /** How far the order got. */
+  stage: OrderStage;
+  /** True once "Add to cart" was pressed: the Prime cart may hold this item and must be cleared before a retry. */
+  cartTouched: boolean;
+  /** Prime's total (item plus packs) in kobo, once the item screen was read. */
+  totalKobo?: number;
   paystackUrl?: string;
-  rawResponse?: string;
+  orderRef?: string;
   stepsCompleted: string[];
 }
+
+/** How long to wait for Prime to answer one message or button press. */
+const REPLY_TIMEOUT_MS = 12_000;
+const POLL_MS = 400;
+
+/** One order at a time per Telegram session: concurrent orders would read each other's bot replies. */
+const sessionLocks = new Map<string, Promise<unknown>>();
 
 export class DineOrderingAgent {
   private client: TelegramClient | null = null;
@@ -62,170 +87,112 @@ export class DineOrderingAgent {
     return this.client;
   }
 
-  /**
-   * Helper to wait for the latest incoming message from the target bot
-   */
-  private async getLatestBotMessage(botEntity: any, waitSeconds = 5): Promise<any> {
-    const client = await this.getClient();
-    for (let i = 0; i < waitSeconds * 2; i++) {
-      const messages = await client.getMessages(botEntity, { limit: 1 });
-      if (messages.length > 0 && !messages[0].out) {
-        return messages[0];
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    const fallback = await client.getMessages(botEntity, { limit: 1 });
-    return fallback[0] || null;
-  }
-
-  /**
-   * Helper to click an inline or keyboard button matching a name
-   */
-  private async clickButtonByText(message: any, targetText: string): Promise<boolean> {
-    if (!message || !message.replyMarkup) return false;
-
-    const rows = (message.replyMarkup as any).rows || [];
-    for (let r = 0; r < rows.length; r++) {
-      const buttons = rows[r].buttons || [];
-      for (let b = 0; b < buttons.length; b++) {
-        const btn = buttons[b];
-        const btnText = (btn.text || "").trim().toLowerCase();
-        const search = targetText.trim().toLowerCase();
-
-        if (btnText.includes(search) || search.includes(btnText)) {
-          try {
-            await message.click(b, r);
-            return true;
-          } catch (e) {
-            console.warn(`Click failed on [${btn.text}]:`, e);
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Autonomous Order Placement on Prime's Bot
-   */
+  /** Places one order on Prime. Queues behind any order already running on this session. */
   public async placeOrder(target: OrderTarget): Promise<AgentOrderResult> {
-    const stepsCompleted: string[] = [];
-    const client = await this.getClient();
-
+    const key = this.sessionString || "default";
+    const previous = sessionLocks.get(key) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.placeOrderNow(target));
+    sessionLocks.set(key, run);
     try {
-      const botUsername = (target.botUsername || process.env.PRIME_BOT_USERNAME || "orderfromprimebot").replace(/^@/, "");
-      console.log(`🤖 Dine Agent starting order on @${botUsername} for "${target.vendorName} -> ${target.itemName}"...`);
+      return await run;
+    } finally {
+      if (sessionLocks.get(key) === run) sessionLocks.delete(key);
+    }
+  }
 
-      const botEntity = await client.getEntity(botUsername);
-      stepsCompleted.push(`Connected to @${botUsername}`);
+  private async placeOrderNow(target: OrderTarget): Promise<AgentOrderResult> {
+    let bot: PrimeBot;
+    try {
+      const client = await this.getClient();
+      const username = (target.botUsername || process.env.PRIME_BOT_USERNAME || "orderfromprimebot").replace(/^@/, "");
+      bot = new TelegramPrimeBot(client, await client.getEntity(username));
+    } catch (err: any) {
+      return { success: false, code: "BOT_ERROR", stage: "start", cartTouched: false, message: `Could not reach Prime: ${err?.message ?? err}`, stepsCompleted: [] };
+    }
 
-      // Step 1: Initialize conversation
-      await client.sendMessage(botEntity, { message: "/start" });
-      await new Promise((r) => setTimeout(r, 2000));
-      stepsCompleted.push("Sent /start");
-
-      let msg = await this.getLatestBotMessage(botEntity);
-
-      // Step 2: Open vendor catalog (Click "See all vendors" or "I'm Hungry")
-      const openedCatalog = await this.clickButtonByText(msg, "See all vendors") ||
-                            await this.clickButtonByText(msg, "Hungry");
-
-      if (openedCatalog) {
-        stepsCompleted.push("Clicked 'See all vendors'");
-        await new Promise((r) => setTimeout(r, 2500));
-        msg = await this.getLatestBotMessage(botEntity);
-      }
-
-      // Step 3: Find and Click Vendor (e.g. "Delish Yamarita")
-      let vendorFound = false;
-      for (let page = 1; page <= 4; page++) {
-        vendorFound = await this.clickButtonByText(msg, target.vendorName);
-        if (vendorFound) {
-          stepsCompleted.push(`Selected vendor '${target.vendorName}' (Page ${page})`);
-          await new Promise((r) => setTimeout(r, 2500));
-          msg = await this.getLatestBotMessage(botEntity);
-          break;
-        }
-
-        // Try next page if vendor not on current page
-        const clickedNext = await this.clickButtonByText(msg, "Next");
-        if (clickedNext) {
-          stepsCompleted.push(`Advanced to catalog page ${page + 1}`);
-          await new Promise((r) => setTimeout(r, 2000));
-          msg = await this.getLatestBotMessage(botEntity);
-        } else {
-          break;
-        }
-      }
-
-      if (!vendorFound) {
-        return {
-          success: false,
-          message: `Vendor '${target.vendorName}' was not found in Prime's active directory.`,
-          stepsCompleted,
-          rawResponse: msg?.text
-        };
-      }
-
-      // Step 4: Click Meal Item (or "Order now")
-      const clickedItem = await this.clickButtonByText(msg, target.itemName) ||
-                          await this.clickButtonByText(msg, "Order now");
-
-      if (clickedItem) {
-        stepsCompleted.push(`Selected meal item '${target.itemName}'`);
-        await new Promise((r) => setTimeout(r, 2500));
-        msg = await this.getLatestBotMessage(botEntity);
-      }
-
-      // Step 5: Check for Paystack URL in message or buttons
-      const paystackUrl = this.extractPaystackUrl(msg);
-
-      if (paystackUrl) {
-        stepsCompleted.push("Acquired Paystack Checkout URL");
-        return {
-          success: true,
-          message: "Order placed successfully! Ready for payment.",
-          paystackUrl,
-          stepsCompleted,
-          rawResponse: msg?.text
-        };
-      }
-
+    const r = await runOrderFlow(bot, target);
+    if (r.ok) {
       return {
         success: true,
-        message: "Order flow completed to current checkout step.",
-        stepsCompleted,
-        rawResponse: msg?.text
-      };
-    } catch (err: any) {
-      console.error("Agent order automation error:", err);
-      return {
-        success: false,
-        message: `Agent encountered an error: ${err?.message || err}`,
-        stepsCompleted
+        stage: "done",
+        cartTouched: true,
+        message: r.paystackUrl ? "Order placed on Prime; checkout link ready." : "Order placed on Prime.",
+        totalKobo: r.totalKobo,
+        paystackUrl: r.paystackUrl,
+        orderRef: r.orderRef,
+        stepsCompleted: r.steps,
       };
     }
+    return {
+      success: false,
+      code: r.code,
+      stage: r.stage,
+      cartTouched: r.cartTouched,
+      message: r.detail,
+      totalKobo: r.totalKobo,
+      stepsCompleted: r.steps,
+    };
+  }
+}
+
+/**
+ * PrimeBot over GramJS. Prime either edits its message in place or sends a new one,
+ * so a reply is "the latest incoming message, once it differs from what we had".
+ */
+class TelegramPrimeBot implements PrimeBot {
+  private messages = new WeakMap<BotScreen, any>();
+
+  constructor(private client: TelegramClient, private bot: any) {}
+
+  async start(): Promise<BotScreen> {
+    const before = await this.latestKey();
+    await this.client.sendMessage(this.bot, { message: "/start" });
+    return this.waitForReply(before);
   }
 
-  private extractPaystackUrl(message: any): string | undefined {
-    if (!message) return undefined;
+  async click(screen: BotScreen, button: BotButton): Promise<BotScreen> {
+    const message = this.messages.get(screen);
+    if (!message) throw new Error("screen has no Telegram message");
+    const before = await this.latestKey();
+    await message.click({ i: button.row, j: button.col });
+    return this.waitForReply(before);
+  }
 
-    const text = message.text || "";
-    const match = text.match(/https?:\/\/(?:checkout\.)?paystack\.(?:com|co)\/[^\s]+/i);
-    if (match) {
-      return match[0];
-    }
+  private async latest(): Promise<any | null> {
+    const [m] = await this.client.getMessages(this.bot, { limit: 1 });
+    return m && !m.out ? m : null;
+  }
 
-    if (message.replyMarkup && message.replyMarkup.rows) {
-      for (const row of message.replyMarkup.rows) {
-        for (const btn of row.buttons || []) {
-          if (btn.url && btn.url.includes("paystack")) {
-            return btn.url;
-          }
-        }
+  private key(m: any): string {
+    return m ? `${m.id}:${m.editDate ?? 0}:${m.message ?? ""}` : "";
+  }
+
+  private async latestKey(): Promise<string> {
+    return this.key(await this.latest());
+  }
+
+  private async waitForReply(beforeKey: string): Promise<BotScreen> {
+    const deadline = Date.now() + REPLY_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, POLL_MS));
+      const m = await this.latest();
+      if (m && this.key(m) !== beforeKey) {
+        // Give Prime a moment to finish editing a multi-step update, then take the settled message.
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        const settled = (await this.latest()) ?? m;
+        return this.toScreen(settled);
       }
     }
+    throw new Error("Prime did not reply in time");
+  }
 
-    return undefined;
+  private toScreen(m: any): BotScreen {
+    const buttons: BotButton[] = [];
+    (m.replyMarkup?.rows ?? []).forEach((row: any, r: number) =>
+      (row.buttons ?? []).forEach((btn: any, c: number) => buttons.push({ row: r, col: c, label: String(btn.text ?? ""), ...(btn.url ? { url: btn.url } : {}) })),
+    );
+    const screen: BotScreen = { text: String(m.message ?? ""), buttons };
+    this.messages.set(screen, m);
+    return screen;
   }
 }
