@@ -150,7 +150,7 @@ async function parseNoteModel(text: string, menu: PrimeMenu, apiKey: string, opt
 
   const ai = new GoogleGenAI({ apiKey });
   // GEMINI_MODEL may list fallbacks ("primary, backup"); try each in turn so an overloaded primary doesn't block the user.
-  const models = (opts.model ?? process.env.GEMINI_MODEL ?? "gemini-3.8-flash").split(",").map((s) => s.trim()).filter(Boolean);
+  const models = (opts.model ?? process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite,gemini-3.8-flash").split(",").map((s) => s.trim()).filter(Boolean);
   let res;
   let lastErr: unknown;
   // One quick retry per model on 429/5xx: Gemini overload is brief, and failing straight to keywords loses detail
