@@ -8,7 +8,7 @@ prompts/<agent>/<version>/<part>.md
 
 | Agent | Versions | Parts |
 |---|---|---|
-| `find` | `v1` | `system.md` (has a `{{CLAIMS_RULE}}` slot), `claims-reviews.md`, `claims-no-reviews.md` |
+| `find` | `v1`, `v2` (default) | `system.md` (has a `{{CLAIMS_RULE}}` slot), `claims-reviews.md`, `claims-no-reviews.md` |
 
 ## Rules
 
@@ -22,3 +22,4 @@ prompts/<agent>/<version>/<part>.md
 | Version | Date | Change | Eval |
 |---|---|---|---|
 | find/v1 | 10 Nov | First /find prompt (moved here unchanged from `find-agent.ts` on 11 Nov) | find-v0 run 1 |
+| find/v2 | 14 Nov | Default. Uses the automatic first lookups (pre-search meals and reviews) and answers straight away when they fit; asks for several lookups in one turn; keeps taste words out of `message`; picks from returned meals instead of answering with none | find-v0 14 Nov 13:27: 24/26 (24/24 tested, 2 not tested on API timeouts), 0 unsupported, adversarial 4/4, 1.54 turns/case (v1: ~6.75) |

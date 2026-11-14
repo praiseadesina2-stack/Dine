@@ -7,7 +7,7 @@ import type { MealRecord } from "../find/catalogue.js";
 import type { FindResult, FindTrace } from "../find/find-agent.js";
 import { gradeCase, type EvalCase } from "./grade.js";
 
-const trace: FindTrace = { model: "m", attempts: [], steps: [], rejections: [], inputTokens: 0, outputTokens: 0, ms: 0 };
+const trace: FindTrace = { model: "m", attempts: [], steps: [], turns: [], modelMs: 0, toolMs: 0, rejections: [], inputTokens: 0, outputTokens: 0, ms: 0 };
 const meal = (id: string, vendorId: string, name: string, naira: number): MealRecord => ({
   mealId: id, vendorId, vendorName: vendorId, name, priceKobo: naira * 100, available: true,
 });

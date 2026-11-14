@@ -1,0 +1,425 @@
+{
+  "set": "find-v0",
+  "run_at": "2026-11-14T13:14:14.421Z",
+  "models": [
+    "gemini-3.5-flash-lite"
+  ],
+  "prompt_version": "find/v1",
+  "reviews": true,
+  "cases": [
+    {
+      "id": "pidgin-yam-2k",
+      "query": "abeg I wan chop yam, no pass 2k",
+      "tags": [
+        "pidgin",
+        "food",
+        "budget"
+      ],
+      "pass": true,
+      "failures": [],
+      "ok": true,
+      "fallback": null,
+      "message": "Here are some yam options within your budget!",
+      "picks": [
+        {
+          "meal_id": "evelyn_concept:fried-yam-regular",
+          "name": "Fried Yam (Regular)",
+          "price_naira": 1500,
+          "reason": "Students say the yam chips are tasty and not too oily, though service can be slow.",
+          "review_ids": [
+            "REV-048"
+          ]
+        },
+        {
+          "meal_id": "emabuop_g_foods:boli-yam-potato-regular",
+          "name": "Boli, Yam & Potato (Regular)",
+          "price_naira": 1700,
+          "reason": "A nice combo option within your budget.",
+          "review_ids": []
+        }
+      ],
+      "model": "gemini-3.5-flash-lite",
+      "ms": 4713,
+      "model_ms": 4697,
+      "tool_ms": 15,
+      "turns": [
+        {
+          "ms": 1230,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1392,
+          "calls": [
+            "get_reviews",
+            "get_reviews"
+          ]
+        },
+        {
+          "ms": 1033,
+          "calls": [
+            "final_answer"
+          ]
+        },
+        {
+          "ms": 1042,
+          "calls": [
+            "final_answer"
+          ]
+        }
+      ],
+      "input_tokens": 8224,
+      "output_tokens": 308,
+      "rejections": [
+        [
+          "message says \"tasty\", a claim only reviews can back; put it in a pick's reason with review_ids or drop it"
+        ]
+      ],
+      "infra_retries": 0,
+      "failed_model_calls": [],
+      "tool_calls": [
+        "search_meals",
+        "get_reviews",
+        "get_reviews",
+        "final_answer",
+        "final_answer"
+      ]
+    },
+    {
+      "id": "pidgin-wetin-1500",
+      "query": "wetin dey for 1500?",
+      "tags": [
+        "pidgin",
+        "budget"
+      ],
+      "pass": true,
+      "failures": [],
+      "ok": true,
+      "fallback": null,
+      "message": "Here are a few options within your budget!",
+      "picks": [
+        {
+          "meal_id": "suya_spot:suya-1-000",
+          "name": "Suya (₦1,000)",
+          "price_naira": 1000,
+          "reason": "Students note that the meat can be tasty, though opinions on portions and pepper vary.",
+          "review_ids": [
+            "REV-095",
+            "REV-079"
+          ]
+        },
+        {
+          "meal_id": "evelyn_concept:fried-yam-regular",
+          "name": "Fried Yam (Regular)",
+          "price_naira": 1500,
+          "reason": "Students mention the yam chips are tasty and not overly oily.",
+          "review_ids": [
+            "REV-048"
+          ]
+        },
+        {
+          "meal_id": "breakthrough_pizza:pizza-burger-regular",
+          "name": "Pizza Burger (Regular)",
+          "price_naira": 1500,
+          "reason": "Offers a regular pizza burger option within your budget.",
+          "review_ids": []
+        }
+      ],
+      "model": "gemini-3.5-flash-lite",
+      "ms": 6912,
+      "model_ms": 6910,
+      "tool_ms": 0,
+      "turns": [
+        {
+          "ms": 1117,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1495,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1028,
+          "calls": [
+            "get_reviews"
+          ]
+        },
+        {
+          "ms": 931,
+          "calls": [
+            "get_reviews"
+          ]
+        },
+        {
+          "ms": 1240,
+          "calls": [
+            "get_reviews"
+          ]
+        },
+        {
+          "ms": 1099,
+          "calls": [
+            "final_answer"
+          ]
+        }
+      ],
+      "input_tokens": 16132,
+      "output_tokens": 290,
+      "rejections": [],
+      "infra_retries": 1,
+      "failed_model_calls": [],
+      "tool_calls": [
+        "search_meals",
+        "search_meals",
+        "get_reviews",
+        "get_reviews",
+        "get_reviews",
+        "final_answer"
+      ]
+    },
+    {
+      "id": "pidgin-full-belle-2500",
+      "query": "abeg find me better food wey go full belle, I get 2500",
+      "tags": [
+        "pidgin",
+        "budget",
+        "reviews"
+      ],
+      "pass": true,
+      "failures": [],
+      "ok": true,
+      "fallback": null,
+      "message": "Here are meals within your budget that fit what you need.",
+      "picks": [
+        {
+          "meal_id": "delish_yamarita:delish-pack-1-kebab",
+          "name": "Delish Pack + 1 Kebab",
+          "price_naira": 2200,
+          "reason": "Students say portions are very filling and satisfying.",
+          "review_ids": [
+            "REV-007",
+            "REV-045",
+            "REV-100"
+          ]
+        },
+        {
+          "meal_id": "slash_shawarma:shawarma-2-sausages",
+          "name": "Shawarma + 2 Sausages",
+          "price_naira": 2500,
+          "reason": "Students describe this shawarma option as filling.",
+          "review_ids": [
+            "REV-038"
+          ]
+        }
+      ],
+      "model": "gemini-3.5-flash-lite",
+      "ms": 13446,
+      "model_ms": 13445,
+      "tool_ms": 0,
+      "turns": [
+        {
+          "ms": 1398,
+          "calls": [
+            "search_reviews"
+          ]
+        },
+        {
+          "ms": 1039,
+          "calls": [
+            "search_meals",
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1725,
+          "calls": [
+            "get_reviews"
+          ]
+        },
+        {
+          "ms": 956,
+          "calls": [
+            "get_reviews"
+          ]
+        },
+        {
+          "ms": 1091,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 2336,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1696,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1582,
+          "calls": [
+            "final_answer"
+          ]
+        },
+        {
+          "ms": 1622,
+          "calls": [
+            "final_answer"
+          ]
+        }
+      ],
+      "input_tokens": 28980,
+      "output_tokens": 484,
+      "rejections": [
+        [
+          "message says \"filling\", a claim only reviews can back; put it in a pick's reason with review_ids or drop it"
+        ]
+      ],
+      "infra_retries": 1,
+      "failed_model_calls": [],
+      "tool_calls": [
+        "search_reviews",
+        "search_meals",
+        "search_meals",
+        "get_reviews",
+        "get_reviews",
+        "search_meals",
+        "search_meals",
+        "search_meals",
+        "final_answer",
+        "final_answer"
+      ]
+    },
+    {
+      "id": "pidgin-night-2k",
+      "query": "I dey hungry, wetin I fit chop tonight wey no cost reach 2k",
+      "tags": [
+        "pidgin",
+        "budget"
+      ],
+      "pass": true,
+      "failures": [],
+      "ok": true,
+      "fallback": null,
+      "message": "Here are budget-friendly options you can grab tonight under 2k!",
+      "picks": [
+        {
+          "meal_id": "emabuop_g_foods:boli-yam-potato-regular",
+          "name": "Boli, Yam & Potato (Regular)",
+          "price_naira": 1700,
+          "reason": "A solid regular portion to fill your belly.",
+          "review_ids": []
+        }
+      ],
+      "model": "gemini-3.5-flash-lite",
+      "ms": 8569,
+      "model_ms": 8566,
+      "tool_ms": 2,
+      "turns": [
+        {
+          "ms": 1490,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1026,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 827,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1096,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1064,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 707,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1270,
+          "calls": [
+            "search_meals"
+          ]
+        },
+        {
+          "ms": 1086,
+          "calls": [
+            "final_answer"
+          ]
+        }
+      ],
+      "input_tokens": 15048,
+      "output_tokens": 261,
+      "rejections": [],
+      "infra_retries": 1,
+      "failed_model_calls": [],
+      "tool_calls": [
+        "search_meals",
+        "search_meals",
+        "search_meals",
+        "search_meals",
+        "search_meals",
+        "search_meals",
+        "search_meals",
+        "final_answer"
+      ]
+    }
+  ],
+  "passed": 4,
+  "pass_rate": 1,
+  "not_tested": 0,
+  "pass_rate_tested": 1,
+  "infra_retries": 3,
+  "unsupported_claims": 0,
+  "adversarial_passed": "0/0",
+  "fallbacks": 0,
+  "fallback_reasons": {},
+  "grounding_repairs": 2,
+  "latency_ms": {
+    "p50": 8569,
+    "p90": 13446,
+    "max": 13446
+  },
+  "latency_breakdown": {
+    "model_ms_share": 1,
+    "tool_ms_share": 0,
+    "model_turns_per_case": {
+      "avg": 6.75,
+      "p50": 8,
+      "max": 9
+    },
+    "ms_per_model_turn_p50": 1099
+  },
+  "tokens": {
+    "input": 68384,
+    "output": 1343,
+    "per_case_avg": 17432
+  }
+}

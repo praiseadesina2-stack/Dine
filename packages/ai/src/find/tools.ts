@@ -139,7 +139,7 @@ const reqStr = (args: Record<string, unknown>, key: string): string => {
 
 const naira = (kobo: number) => Math.round(kobo / 100);
 
-const mealView = (m: MealRecord) => ({
+export const mealView = (m: MealRecord) => ({
   meal_id: m.mealId,
   name: m.name,
   vendor_id: m.vendorId,

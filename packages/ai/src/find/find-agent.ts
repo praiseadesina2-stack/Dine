@@ -4,17 +4,18 @@
  * check. Any failure returns { ok: false } so the caller can fall back to the
  * rule-based recommender. This module never touches orders or money.
  */
-import { FunctionCallingConfigMode, GoogleGenAI, type Content, type Part } from "@google/genai";
+import { FunctionCallingConfigMode, GoogleGenAI, ThinkingLevel, type Content, type Part } from "@google/genai";
 import type { ReviewRecord, ReviewStore } from "../context/reviews.js";
 import type { Catalogue, MealRecord } from "./catalogue.js";
 import { checkGrounding, type ProposedPick } from "./grounding.js";
+import { preSearch } from "./presearch.js";
 import { declarationsFor, FINAL_ANSWER, runReadTool, ToolArgError } from "./tools.js";
 import { loadPrompt } from "../prompts.js";
 
 export const DEFAULT_MODEL = "gemini-3.8-flash";
 
 /** prompts/find/<version>/. Override with FIND_PROMPT_VERSION; see prompts/README.md. */
-export const DEFAULT_PROMPT_VERSION = "v1";
+export const DEFAULT_PROMPT_VERSION = "v2";
 
 export function buildSystemPrompt(opts: { reviews: boolean; version?: string }): string {
   const version = opts.version ?? process.env.FIND_PROMPT_VERSION ?? DEFAULT_PROMPT_VERSION;
@@ -30,10 +31,16 @@ export interface FindAgentOptions {
   model?: string;
   /** Model round-trips before giving up. */
   maxSteps?: number;
-  /** Per model call. */
+  /** Per model call (default 8s). Each call also stops at the overall deadline. */
   timeoutMs?: number;
+  /** Whole conversation, model and tools (default 20s, contracts/tools.md "Limits"); then fall back. */
+  deadlineMs?: number;
   /** Rejected final answers allowed before giving up. */
   maxRepairs?: number;
+  /** Run search_meals on the student's words before the first model call (default true). */
+  preSearch?: boolean;
+  /** Gemini thinking level: MINIMAL, LOW, MEDIUM, HIGH or "default" (model's own). Env FIND_THINKING_LEVEL; default LOW. */
+  thinkingLevel?: string;
 }
 
 export interface FindPick {
@@ -48,7 +55,12 @@ export interface FindTrace {
   model: string;
   /** Failed model calls (retries and fallbacks), for cost and reliability tracking. */
   attempts: { model: string; error: string }[];
-  steps: { tool: string; args: unknown; result?: unknown; error?: string }[];
+  steps: { tool: string; args: unknown; result?: unknown; error?: string; ms?: number }[];
+  /** One entry per model round-trip that answered: wall time (including retries/fallbacks) and the tools it asked for. */
+  turns: { ms: number; calls: string[] }[];
+  /** Total wall time spent waiting on the model vs running read tools. */
+  modelMs: number;
+  toolMs: number;
   rejections: string[][];
   inputTokens: number;
   outputTokens: number;
@@ -57,14 +69,23 @@ export interface FindTrace {
 
 export type FindResult =
   | { ok: true; message: string; picks: FindPick[]; trace: FindTrace }
-  | { ok: false; reason: "not_configured" | "model_error" | "timeout" | "ungrounded" | "too_many_steps"; detail?: string; trace: FindTrace };
+  | {
+      ok: false;
+      reason: "not_configured" | "model_error" | "timeout" | "ungrounded" | "too_many_steps";
+      detail?: string;
+      /** Meals the pre-search found for the request (catalogue rows, stored prices), for the keyword fallback to show. */
+      candidates?: MealRecord[];
+      trace: FindTrace;
+    };
 
 export class FindAgent {
   private ai: GoogleGenAI | null;
   private models: string[];
   private maxSteps: number;
   private timeoutMs: number;
+  private deadlineMs: number;
   private maxRepairs: number;
+  private thinkingLevel: ThinkingLevel | null;
 
   constructor(private opts: FindAgentOptions) {
     const apiKey = opts.apiKey || process.env.GEMINI_API_KEY || process.env.AI_PROVIDER_API_KEY;
@@ -73,8 +94,11 @@ export class FindAgent {
     const spec = opts.model || process.env.GEMINI_MODEL || DEFAULT_MODEL;
     this.models = spec.split(",").map((s) => s.trim()).filter(Boolean);
     this.maxSteps = opts.maxSteps ?? 8;
-    this.timeoutMs = opts.timeoutMs ?? 20_000;
+    this.timeoutMs = opts.timeoutMs ?? 8_000;
+    this.deadlineMs = opts.deadlineMs ?? 20_000;
     this.maxRepairs = opts.maxRepairs ?? 1;
+    const level = (opts.thinkingLevel ?? process.env.FIND_THINKING_LEVEL ?? "LOW").toUpperCase();
+    this.thinkingLevel = level === "DEFAULT" ? null : (ThinkingLevel as Record<string, ThinkingLevel>)[level] ?? ThinkingLevel.LOW;
   }
 
   isConfigured(): boolean {
@@ -83,8 +107,14 @@ export class FindAgent {
 
   async find(userText: string): Promise<FindResult> {
     const started = Date.now();
-    const trace: FindTrace = { model: "", attempts: [], steps: [], rejections: [], inputTokens: 0, outputTokens: 0, ms: 0 };
-    const done = <T extends FindResult>(r: T): T => ((trace.ms = Date.now() - started), r);
+    const trace: FindTrace = { model: "", attempts: [], steps: [], turns: [], modelMs: 0, toolMs: 0, rejections: [], inputTokens: 0, outputTokens: 0, ms: 0 };
+    const deadline = started + this.deadlineMs;
+    let candidates: MealRecord[] = [];
+    const done = <T extends FindResult>(r: T): T => {
+      trace.ms = Date.now() - started;
+      if (!r.ok && candidates.length) r.candidates = candidates;
+      return r;
+    };
 
     if (!this.ai) return done({ ok: false, reason: "not_configured", trace });
 
@@ -96,19 +126,41 @@ export class FindAgent {
       onSeenMeals: (meals: MealRecord[]) => meals.forEach((m) => seen.set(m.mealId, m)),
       onSeenReviews: (reviews: ReviewRecord[]) => reviews.forEach((r) => seenReviews.set(r.reviewId, r)),
     };
-    const contents: Content[] = [{ role: "user", parts: [{ text: userText.slice(0, 1000) }] }];
+    const request = userText.slice(0, 1000);
+    const firstTurn: Part[] = [{ text: request }];
+    if (this.opts.preSearch !== false) {
+      // Same read tools and "seen" bookkeeping as model-requested calls, so grounding
+      // treats these meals and reviews exactly like ones the model asked for.
+      const toolStarted = Date.now();
+      const pre = await preSearch(request, toolCtx);
+      trace.toolMs += Date.now() - toolStarted;
+      if (pre) {
+        candidates = pre.meals;
+        trace.steps.push(...pre.steps);
+        firstTurn.push({ text: pre.text });
+      }
+    }
+    const contents: Content[] = [{ role: "user", parts: firstTurn }];
 
     // maxSteps model calls for searching and answering, plus one extra call per allowed repair,
     // so an answer rejected on the last search step can still be fixed.
     for (let step = 0; step < this.maxSteps + this.maxRepairs; step++) {
       let response;
+      const modelStarted = Date.now();
+      const remaining = deadline - modelStarted;
+      if (remaining <= 500) return done({ ok: false, reason: "timeout", detail: `over the ${this.deadlineMs}ms deadline`, trace });
       try {
-        // From the last search step on, only final_answer is allowed, so the model answers with what it has found.
-        response = await this.generate(contents, trace, step >= this.maxSteps - 1);
+        // From the last search step on, or when time is short, only final_answer is allowed,
+        // so the model answers with what it has found instead of timing out.
+        const finalOnly = step >= this.maxSteps - 1 || remaining < FINAL_ONLY_BELOW_MS;
+        response = await this.generate(contents, trace, finalOnly, deadline);
       } catch (err: any) {
+        trace.modelMs += Date.now() - modelStarted;
         const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
         return done({ ok: false, reason: timedOut ? "timeout" : "model_error", detail: String(err?.message ?? err), trace });
       }
+      const modelMs = Date.now() - modelStarted;
+      trace.modelMs += modelMs;
 
       trace.inputTokens += response.usageMetadata?.promptTokenCount ?? 0;
       trace.outputTokens +=
@@ -116,6 +168,7 @@ export class FindAgent {
 
       const modelContent = response.candidates?.[0]?.content;
       const calls = response.functionCalls ?? [];
+      trace.turns.push({ ms: modelMs, calls: calls.map((c) => c.name ?? "") });
       if (!modelContent || calls.length === 0) {
         return done({ ok: false, reason: "model_error", detail: "model returned no function call", trace });
       }
@@ -148,13 +201,18 @@ export class FindAgent {
           continue;
         }
 
+        const toolStarted = Date.now();
         try {
           const result = await runReadTool(toolCtx, name, args);
-          trace.steps.push({ tool: name, args, result });
+          const ms = Date.now() - toolStarted;
+          trace.toolMs += ms;
+          trace.steps.push({ tool: name, args, result, ms });
           replies.push(fnResponse(call.id, name, result));
         } catch (err: any) {
+          const ms = Date.now() - toolStarted;
+          trace.toolMs += ms;
           const msg = err instanceof ToolArgError ? err.message : "tool failed";
-          trace.steps.push({ tool: name, args, error: String(err?.message ?? err) });
+          trace.steps.push({ tool: name, args, error: String(err?.message ?? err), ms });
           replies.push(fnResponse(call.id, name, { error: msg }));
         }
       }
@@ -165,17 +223,31 @@ export class FindAgent {
   }
 
   /**
-   * One model round-trip. Transient failures (429, 5xx, timeout) get one quick
-   * retry on the same model, then move to the next model in the list. Once a
-   * model answers, the rest of this conversation stays on it, because Gemini
-   * thought signatures from one model are not valid for another.
+   * One model round-trip, never past `deadline`.
+   *
+   * Before any model has answered, a 429 (quota) moves straight to the next model:
+   * retrying the same model a moment later almost always gets another 429 and only
+   * adds latency. Other transient failures (5xx, timeout, network) get one quick
+   * retry on the same model first.
+   *
+   * Once a model answers, the rest of the conversation stays on it, because Gemini
+   * thought signatures from one model are not valid for another. A 429 then waits
+   * the delay Gemini suggests, if it fits before the deadline, and retries once.
    */
-  private async generate(contents: Content[], trace: FindTrace, finalOnly = false) {
-    const pinned = trace.model ? [trace.model] : this.models;
+  private async generate(contents: Content[], trace: FindTrace, finalOnly: boolean, deadline: number) {
+    const pinned = !!trace.model;
+    const models = pinned ? [trace.model] : this.models;
     let lastErr: unknown;
-    for (const model of pinned) {
+    for (const [i, model] of models.entries()) {
+      const hasNext = i < models.length - 1;
       for (let attempt = 0; attempt < 2; attempt++) {
-        if (attempt > 0) await sleep(600 + Math.random() * 600);
+        if (attempt > 0) {
+          const wait = (lastErr as any)?.status === 429 ? retryDelayMs(lastErr) ?? 1_000 : 300 + Math.random() * 300;
+          if (Date.now() + wait + 1_000 > deadline) break;
+          await sleep(wait);
+        }
+        const callTimeout = Math.min(this.timeoutMs, deadline - Date.now());
+        if (callTimeout < 1_000) throw Object.assign(new Error("deadline reached"), { name: "TimeoutError" });
         try {
           const response = await this.ai!.models.generateContent({
             model,
@@ -190,7 +262,8 @@ export class FindAgent {
                 },
               },
               temperature: 0.4,
-              abortSignal: AbortSignal.timeout(this.timeoutMs),
+              ...(this.thinkingLevel ? { thinkingConfig: { thinkingLevel: this.thinkingLevel } } : {}),
+              abortSignal: AbortSignal.timeout(callTimeout),
             },
           });
           trace.model = model;
@@ -203,6 +276,7 @@ export class FindAgent {
             if ((err as any)?.status === 404) break;
             throw err;
           }
+          if ((err as any)?.status === 429 && !pinned && hasNext) break;
         }
       }
     }
@@ -223,6 +297,15 @@ export class FindAgent {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Below this much time left, the model may only call final_answer. */
+const FINAL_ONLY_BELOW_MS = 5_000;
+
+/** Wait suggested by a Gemini 429 ("retryDelay": "2s"), in ms, if present. */
+function retryDelayMs(err: any): number | undefined {
+  const m = String(err?.message ?? "").match(/retryDelay\W+(\d+(?:\.\d+)?)s/i);
+  return m ? Number(m[1]) * 1000 : undefined;
+}
 
 const NETWORK_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"]);
 

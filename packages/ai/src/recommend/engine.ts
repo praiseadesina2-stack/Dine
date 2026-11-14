@@ -26,6 +26,10 @@ export interface EngineOptions {
   now?: Date;
   /** Hours Prime sells, Lagos time, [from, to). */
   primeHours?: { from: number; to: number };
+  /** Only Prime meals (orderable through Dine); campus meals are left out. Used by weekly plans. */
+  primeOnly?: boolean;
+  /** Most extras added to a Prime main (default 2). 0 = the main alone, as weekly plans need. */
+  maxExtras?: number;
 }
 
 interface Line { name: string; qty: number; unit?: string; price: number; parts: Part[]; minHeat?: number }
@@ -213,7 +217,7 @@ function primeMeal(vendor: PrimeVendor, main: Entry, extras: Entry[]): Meal {
 }
 
 /** One best meal per (vendor, main): greedily add extras while they raise the score. */
-function buildPrimeMeals(menu: PrimeMenu, ctx: Ctx, isOpen: (id: string) => boolean): Meal[] {
+function buildPrimeMeals(menu: PrimeMenu, ctx: Ctx, isOpen: (id: string) => boolean, maxExtras = MAX_EXTRAS): Meal[] {
   const out: Meal[] = [];
   for (const [vendorId, { mains, extras }] of primeEntries(menu)) {
     const vendor = menu.vendors.find((v) => v.id === vendorId)!;
@@ -224,7 +228,7 @@ function buildPrimeMeals(menu: PrimeMenu, ctx: Ctx, isOpen: (id: string) => bool
       let current = primeMeal(vendor, main, chosen);
       if (!allowed(current.profile, ctx.note)) continue;
       let best = score(current, ctx).value;
-      for (let round = 0; round < MAX_EXTRAS; round++) {
+      for (let round = 0; round < maxExtras; round++) {
         let pick: { chosen: Entry[]; meal: Meal; value: number } | null = null;
         for (const extra of extras) {
           if (chosen.includes(extra) || !compatible(main, extra) || current.total + extra.line.price > ctx.budget) continue;
@@ -401,7 +405,10 @@ export function runEngine(req: RecommendRequest, note: NoteConstraints, opts: En
   const exclude = new Set(req.excludeMealKeys ?? []);
   const notices = baseNotices(note);
   const menuAsOf = menu.source.crawledAt;
-  const mealsFor = (ctx: Ctx, withPrime: boolean) => [...buildCampusMeals(ctx, prices), ...(withPrime ? buildPrimeMeals(menu, ctx, isOpen) : [])];
+  const mealsFor = (ctx: Ctx, withPrime: boolean) => [
+    ...(opts.primeOnly ? [] : buildCampusMeals(ctx, prices)),
+    ...(withPrime ? buildPrimeMeals(menu, ctx, isOpen, opts.maxExtras) : []),
+  ];
 
   if (req.mode === "now") {
     const hour = lagosHour(opts.now ?? new Date());
