@@ -33,3 +33,9 @@ test("no model and no matches: points to the menu, names no meal", async () => {
   assert.match(text, /Browse/);
   assert.doesNotMatch(text, /₦/);
 });
+
+test("no model, food word not on the menu: budget picks are labelled as budget picks", async () => {
+  const text = formatFindResult(await keylessAgent().find("cheap rice under 1600"));
+  assert.match(text, /within your budget/);
+  assert.match(text, /Fried Yam/);
+});

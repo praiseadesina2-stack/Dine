@@ -75,6 +75,8 @@ export type FindResult =
       detail?: string;
       /** Meals matching the request's food words or budget (catalogue rows, stored prices), for the keyword fallback to show. */
       candidates?: MealRecord[];
+      /** "keywords": candidates matched the student's food words; "budget": only their budget. */
+      candidatesMatchedBy?: "keywords" | "budget";
       trace: FindTrace;
     };
 
@@ -110,9 +112,10 @@ export class FindAgent {
     const trace: FindTrace = { model: "", attempts: [], steps: [], turns: [], modelMs: 0, toolMs: 0, rejections: [], inputTokens: 0, outputTokens: 0, ms: 0 };
     const deadline = started + this.deadlineMs;
     let candidates: MealRecord[] = [];
+    let matchedBy: "keywords" | "budget" = "keywords";
     const done = <T extends FindResult>(r: T): T => {
       trace.ms = Date.now() - started;
-      if (!r.ok && candidates.length) r.candidates = candidates;
+      if (!r.ok && candidates.length) Object.assign(r, { candidates, candidatesMatchedBy: matchedBy });
       return r;
     };
 
@@ -133,7 +136,10 @@ export class FindAgent {
       const pre = await preSearch(request, toolCtx);
       trace.toolMs += Date.now() - toolStarted;
       if (pre) {
-        if (pre.matchedBy !== "overview") candidates = pre.meals;
+        if (pre.matchedBy !== "overview") {
+          candidates = pre.meals;
+          matchedBy = pre.matchedBy;
+        }
         trace.steps.push(...pre.steps);
         firstTurn.push({ text: pre.text });
       }
@@ -374,7 +380,11 @@ export function formatFallbackReply(result: Extract<FindResult, { ok: false }>):
   if (!meals.length) {
     return "I can't search properly right now. Try again in a minute, or tap Browse to see the menu.";
   }
-  const lines = ["I can't give a full answer right now, but these match what you asked for:"];
+  const lines = [
+    result.candidatesMatchedBy === "budget"
+      ? "I can't give a full answer right now, but these are within your budget:"
+      : "I can't give a full answer right now, but these match what you asked for:",
+  ];
   meals.forEach((m, i) => lines.push("", `${i + 1}. ${m.name} (${m.vendorName}) - ${naira(m.priceKobo)}`));
   return lines.join("\n");
 }
