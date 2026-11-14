@@ -35,7 +35,8 @@ model ◀──result (naira)── AI layer ◀──────result (kobo)�
 | `flag_data_issue` | Write (safe) | Backend endpoint | Missing |
 | `final_answer` | Output | AI layer only (not an endpoint) | Exists; schema `chat-reply.schema.json` |
 
-Removed from the earlier plan: `propose_order_action` (the scheduler orders, not the AI) and `create_complaint_draft`.
+Removed from the earlier plan: `propose_order_action` and `create_complaint_draft`.
+There is deliberately **no ordering tool for the model**. Orders are placed by the ordering agent only after the student taps **Order on Dine** or approves a schedule with consent; see [ordering.md](ordering.md).
 
 ### `search_meals(query?, min_price_naira?, max_price_naira?, vendor_id?, limit?)`
 

@@ -9,6 +9,7 @@ and the code together, and get the other engineer's review.
 | [catalogue.md](catalogue.md) | Catalogue tables, provenance, freshness, what may be shown | AI → Backend | v1, 11 Nov |
 | [tools.md](tools.md) | Tool names, arguments, results, error codes | AI → Backend | v1, 11 Nov |
 | [schemas/](schemas/) | JSON Schemas for model outputs, tool arguments, errors and policy decisions | AI → Backend | v1, 11 Nov |
+| [ordering.md](ordering.md) | When Dine orders for a student, the order sequence, and the ordering agent's interface | Both | **Draft**, 14 Nov: needs backend sign-off |
 | [policy.md](policy.md) | Order attempt in, `allow` / `block` / `ask_user` out | Both | **Draft**: needs backend sign-off |
 | states.md | Order and payment states, plus the exact message text for each | Backend → AI | **Not written**: backend owes it |
 
@@ -18,7 +19,9 @@ and the code together, and get the other engineer's review.
 - **Times are ISO 8601 in UTC.** Days and the dinner lead time are interpreted in `Africa/Lagos`.
 - **Day codes** are `mon tue wed thu fri sat sun` (same as `DAYS` in `packages/ai/src/recommend/types.ts`).
 - **IDs are opaque strings.** The AI never builds or parses an ID; it only passes back IDs a tool returned.
-- **The AI proposes and the backend decides.** No tool, schema or model output can place an order, pay, or change a balance.
+- **Dine only orders what is on Prime's bot catalogue.** Campus meals are suggestions only and are never orderable.
+- **Dine orders for the student, but only on the student's say-so.** The ordering agent (`DineOrderingAgent`, `packages/ai/src/agent.ts`) places the order on Prime and Dine pays from the wallet the student funded. It runs only when the student taps **Order on Dine**, or when the scheduler runs a day of a plan the student approved and consented to Dine ordering on their behalf. See [ordering.md](ordering.md).
+- **The model never triggers an order or a payment.** No model tool, schema or output can place an order, pay, or change a balance. The model proposes; the student approves; the backend's policy check decides; the ordering agent executes.
 - **The user comes from the session**, never from model arguments.
 
 ## Schema files

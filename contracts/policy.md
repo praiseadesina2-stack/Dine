@@ -4,16 +4,18 @@
 Output schema: `schemas/policy-decision.schema.json`.
 
 The policy service is deterministic code. The model is never called while it runs, and nothing it does depends on the model being up.
-It runs before every scheduled order, and again right before the payment call.
+It runs before every order the ordering agent places (an **Order on Dine** tap or a scheduled plan day, see [ordering.md](ordering.md)), and again right before the wallet payment.
 
 ## Input: an order attempt
 
 | Field | Meaning |
 |---|---|
-| `user_id` | From the plan record |
-| `plan_id`, `plan_item_id` | The approved plan item being executed |
-| `meal_id`, `vendor_id` | From the plan item |
-| `approved_price_kobo` | Price the student approved |
+| `trigger` | `tap` (student tapped **Order on Dine**) or `schedule` (scheduler running an approved plan day) |
+| `user_id` | From the Telegram session (`tap`) or the plan record (`schedule`) |
+| `plan_id`, `plan_item_id` | `schedule` only: the approved plan item being executed. Null for `tap` |
+| `tap_token` | `tap` only: the single-use callback token of the button the student pressed. Null for `schedule` |
+| `meal_id`, `vendor_id` | From the tapped pick or the plan item |
+| `approved_price_kobo` | Price shown on the button the student tapped, or the price on the plan they approved |
 | `current_price_kobo` | Price read from the catalogue at run time (null if missing) |
 | `price_verified_at` | `meals.last_verified_at` at run time |
 | `scheduled_for` | The dinner date and time this order is for |
@@ -27,7 +29,7 @@ The service reads everything else itself: approval and consent records, pause st
 { "decision": "allow" | "block" | "ask_user", "reasons": [{ "code": "...", "detail": "..." }], "amount_kobo": 0, "policy_version": "v1" }
 ```
 
-- `allow`: reserve `amount_kobo` and pay through the adapter.
+- `allow`: reserve `amount_kobo` from the student's wallet; the ordering agent then places the order and Dine pays the checkout from that reservation.
 - `block`: skip this order and notify the student with the state text for the first reason.
 - `ask_user`: skip this order for now and send the price-change keyboard. Payment happens only after a fresh approval.
 
@@ -40,17 +42,17 @@ The service reads everything else itself: approval and consent records, pause st
 |---|---|---|---|
 | 1 | Payments are enabled (`PAYMENTS_ENABLED`) | block | `PAYMENTS_DISABLED` |
 | 2 | User and plan are not paused | block | `PAUSED` |
-| 3 | The plan item is approved for auto-pay, with a consent record (text version and timestamp) | block | `NOT_APPROVED` |
-| 4 | No order already exists for this plan item (idempotency) | block | `DUPLICATE` |
+| 3 | `schedule`: the plan item is approved, and the plan's consent record (given once, for the whole week or the days the student chose: text version, timestamp, days covered) includes this item's day. `tap`: the tap token is valid, unused, bound to this user, meal and price, and under 15 minutes old | block | `NOT_APPROVED` |
+| 4 | No order already exists for this plan item or tap token (idempotency) | block | `DUPLICATE` |
 | 5 | Vendor is active and in the verified vendor table | block | `VENDOR_NOT_VERIFIED` |
-| 6 | Meal is available and is a dinner item | block | `MEAL_UNAVAILABLE` |
+| 6 | Meal is a Prime catalogue item (on Prime's bot), available, and a dinner item | block | `MEAL_UNAVAILABLE` |
 | 7 | The current price exists and was verified within 30 days | block | `PRICE_STALE` |
 | 8 | Price increase ≤ tolerance: `current ≤ approved × (1 + tolerance)` | ask_user | `PRICE_CHANGED` |
 | 9 | Within the per-order cap | block | `CAP_ORDER` |
 | 10 | Within the per-day cap, counting earlier orders and reservations that day | block | `CAP_DAY` |
 | 11 | Within the per-week cap (Mon–Sun, Lagos time) | block | `CAP_WEEK` |
 | 12 | Available balance ≥ `current_price_kobo`. No partial payments | block | `INSUFFICIENT_BALANCE` |
-| 13 | `now` is inside the run window for `scheduled_for` | block | `OUTSIDE_WINDOW` |
+| 13 | `schedule` only: `now` is inside the run window for `scheduled_for`. `tap`: Prime is taking orders now | block | `OUTSIDE_WINDOW` |
 
 If any rule blocks, the decision is `block` even if rule 8 would ask. If rule 8 is the only failure, the decision is `ask_user`.
 A price **decrease** always passes rule 8, and the order is charged the lower current price.
@@ -79,7 +81,8 @@ Every cap is also limited by `system_max_order_kobo`, so a mistyped budget canno
 
 ## Things the AI relies on
 
-- The AI never calls the policy service and never sees an `allow`. It only reads results through `get_user_context` and the state texts in `states.md`.
+- The model never calls the policy service or the ordering agent, and never sees an `allow`. It only reads results through `get_user_context` and the state texts in `states.md`.
+- The ordering agent (`packages/ai/src/agent.ts`) is code, not a model. The backend calls it only after an `allow` and a successful reservation.
 - `ask_user` uses the same `request_user_confirmation` keyboard machinery, with a backend-only type `price_change`.
 
 ## Tests the backend should have
