@@ -338,15 +338,31 @@ function fnResponse(id: string | undefined, name: string, response: Record<strin
 
 type ParsedFinal = { ok: true; message: string; picks: ProposedPick[] } | { ok: false; error: string };
 
+/** A review ID cited inline, alone or in a bracketed list: "(REV-066, REV-108)", "REV-107". */
+const INLINE_REVIEW_IDS = /\s*\(\s*REV-[A-Z0-9-]+(?:\s*[,;]\s*REV-[A-Z0-9-]+)*\s*\)|\bREV-[A-Z0-9-]+\b/gi;
+
+/**
+ * Remove review IDs the model wrote into its text. They belong in review_ids (where
+ * grounding checks them); in text they mean nothing to a student, and the grounding
+ * check would read "REV-108" as a ₦108 claim.
+ */
+export function stripInlineReviewIds(text: string): string {
+  return text
+    .replace(INLINE_REVIEW_IDS, "")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function parseFinalAnswer(args: Record<string, unknown>): ParsedFinal {
-  const message = typeof args.message === "string" ? args.message.trim() : "";
+  const message = typeof args.message === "string" ? stripInlineReviewIds(args.message) : "";
   if (!message) return { ok: false, error: "message is required" };
   if (!Array.isArray(args.picks)) return { ok: false, error: "picks must be an array" };
   if (args.picks.length > 3) return { ok: false, error: "at most 3 picks" };
   const picks: ProposedPick[] = [];
   for (const p of args.picks) {
     const mealId = typeof p?.meal_id === "string" ? p.meal_id : "";
-    const reason = typeof p?.reason === "string" ? p.reason.trim() : "";
+    const reason = typeof p?.reason === "string" ? stripInlineReviewIds(p.reason) : "";
     if (!mealId || !reason) return { ok: false, error: "each pick needs meal_id and reason" };
     if (p.review_ids != null && (!Array.isArray(p.review_ids) || p.review_ids.some((id: unknown) => typeof id !== "string"))) {
       return { ok: false, error: "review_ids must be an array of strings" };

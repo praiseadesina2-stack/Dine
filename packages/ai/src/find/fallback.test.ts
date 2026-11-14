@@ -68,3 +68,13 @@ test("keyword mode shows allergen cautions under each meal", async () => {
   const text = formatFindResult(await agent.find("suya"));
   assert.match(text, /Suya[^\n]*\n   ⚠ May contain: groundnut/);
 });
+
+test("review IDs written into reply text are removed (they are not prices)", async () => {
+  const { stripInlineReviewIds } = await import("./find-agent.js");
+  assert.equal(
+    stripInlineReviewIds("Students say it is filling, though some mention the kebab is small (REV-066, REV-108)."),
+    "Students say it is filling, though some mention the kebab is small.",
+  );
+  assert.equal(stripInlineReviewIds("A generous meal (REV-107; REV-INJ-1)"), "A generous meal");
+  assert.equal(stripInlineReviewIds("Costs less than the Royal Pack."), "Costs less than the Royal Pack.");
+});
