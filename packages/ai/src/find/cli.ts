@@ -1,7 +1,7 @@
 /**
  * Try the /find agent from the terminal:
- *   pnpm --filter @dine/ai find "something filling under 2000"
- *   pnpm --filter @dine/ai find            (interactive)
+ *   pnpm --filter @dine/ai run find "something filling under 2000"
+ *   pnpm --filter @dine/ai run find            (interactive)
  * Add --trace to print tool calls and token usage.
  */
 import dotenv from "dotenv";

@@ -39,8 +39,17 @@ export const reviewToolDeclarations: FunctionDeclaration[] = [
   },
 ];
 
-export function declarationsFor(opts: { reviews: boolean }): FunctionDeclaration[] {
-  return opts.reviews ? [...toolDeclarations.slice(0, -1), ...reviewToolDeclarations, toolDeclarations.at(-1)!] : toolDeclarations;
+export function declarationsFor(opts: { reviews: boolean; maxPicks?: number }): FunctionDeclaration[] {
+  const finalAnswer = opts.maxPicks && opts.maxPicks !== 3 ? withMaxPicks(toolDeclarations.at(-1)!, opts.maxPicks) : toolDeclarations.at(-1)!;
+  const base = [...toolDeclarations.slice(0, -1)];
+  return opts.reviews ? [...base, ...reviewToolDeclarations, finalAnswer] : [...base, finalAnswer];
+}
+
+/** final_answer with a different picks.maxItems (pool mode for the answer cache). */
+function withMaxPicks(decl: FunctionDeclaration, maxPicks: number): FunctionDeclaration {
+  const schema = structuredClone(decl.parametersJsonSchema) as any;
+  schema.properties.picks.maxItems = maxPicks;
+  return { ...decl, parametersJsonSchema: schema };
 }
 
 export const toolDeclarations: FunctionDeclaration[] = [

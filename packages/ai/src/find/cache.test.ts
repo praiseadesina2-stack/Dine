@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import type { Catalogue, MealRecord } from "./catalogue.js";
 import type { FindResult, FindTrace } from "./find-agent.js";
 import { CachedFinder, MemoryFindCacheStore, normalizeRequest, type FindCacheStore } from "./cache.js";
+import { buildSystemPrompt } from "./find-agent.js";
+import { declarationsFor } from "./tools.js";
 
 const trace = (): FindTrace => ({ model: "m", attempts: [], steps: [], turns: [], modelMs: 900, toolMs: 0, rejections: [], inputTokens: 10, outputTokens: 5, ms: 900 });
 const meal = (id: string, naira: number, available = true): MealRecord => ({
@@ -113,6 +115,64 @@ test("memory store evicts the least recently used entry", async () => {
   await store.set("c", v, 60_000);
   assert.ok(await store.get("a"));
   assert.equal(await store.get("b"), undefined);
+});
+
+function poolSetup(message = "Here are some options.") {
+  const ids = ["a", "b", "c", "d", "e", "f"];
+  const meals = new Map(ids.map((id) => [id, meal(id + "-meal", 1000)] as const));
+  const catalogue = { getMeal: async (id: string) => [...meals.values()].find((m) => m.mealId === id) ?? null } as unknown as Catalogue;
+  let calls = 0;
+  const agent = {
+    async find(): Promise<FindResult> {
+      calls++;
+      return { ok: true, message, picks: [...meals.values()].map((m) => ({ meal: m, reason: "fits", reviews: [] })), trace: trace() };
+    },
+  };
+  const finder = new CachedFinder({ agent, catalogue, version: "t" });
+  const names = (r: FindResult) => (r.ok ? r.picks.map((p) => p.meal.mealId[0]).join("") : "");
+  return { finder, meals, names, calls: () => calls };
+}
+
+test("a bigger pool is cached whole and rotated 3 at a time", async () => {
+  const { finder, names, calls } = poolSetup();
+  assert.equal(names(await finder.find("rice")), "abc");
+  assert.equal(names(await finder.find("rice")), "def");
+  assert.equal(names(await finder.find("rice")), "abc");
+  assert.equal(calls(), 1);
+});
+
+test("no rotation when the message names a specific meal", async () => {
+  const { finder, names } = poolSetup("The a-meal is a good start.");
+  await finder.find("rice");
+  assert.equal(names(await finder.find("rice")), "abc");
+});
+
+test("dropped picks shrink the pool instead of discarding it", async () => {
+  const { finder, meals, names, calls } = poolSetup();
+  await finder.find("rice");
+  meals.set("b", { ...meals.get("b")!, available: false });
+  meals.set("e", { ...meals.get("e")!, priceKobo: 99_900 });
+  const r = await finder.find("rice");
+  assert.equal(r.cache, "hit");
+  assert.equal(names(r), "fac"); // pool is now a,c,d,f; window starts at index 3
+  assert.equal(calls(), 1);
+});
+
+test("pool too small to fill a reply goes back to the agent", async () => {
+  const { finder, meals, calls } = poolSetup();
+  await finder.find("rice");
+  for (const id of ["a", "b", "c", "d"]) meals.set(id, { ...meals.get(id)!, available: false });
+  assert.equal((await finder.find("rice")).cache, "miss");
+  assert.equal(calls(), 2);
+});
+
+test("agent pool mode widens final_answer and the prompt only above 3", () => {
+  const picksMax = (d: ReturnType<typeof declarationsFor>) => (d.at(-1)!.parametersJsonSchema as any).properties.picks.maxItems;
+  assert.equal(picksMax(declarationsFor({ reviews: true })), 3);
+  assert.equal(picksMax(declarationsFor({ reviews: true, maxPicks: 6 })), 6);
+  assert.equal(picksMax(declarationsFor({ reviews: false })), 3, "shared declaration not mutated");
+  assert.doesNotMatch(buildSystemPrompt({ reviews: true }), /Pool mode/);
+  assert.match(buildSystemPrompt({ reviews: true, maxPicks: 6 }), /up to 6 meals/);
 });
 
 test("a failing store never breaks /find", async () => {

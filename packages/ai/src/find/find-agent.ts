@@ -14,15 +14,23 @@ import { loadPrompt } from "../prompts.js";
 import { warningsOf } from "../recommend/engine.js";
 import { parseItem, profileOf } from "../recommend/profile.js";
 
-export const DEFAULT_MODEL = "gemini-3.8-flash";
+/** Primary first, then fallback (see packages/ai/evals/model-decision.md). GEMINI_MODEL overrides. */
+export const DEFAULT_MODEL = "gemini-3.5-flash-lite,gemini-3.8-flash";
 
 /** prompts/find/<version>/. Override with FIND_PROMPT_VERSION; see prompts/README.md. */
 export const DEFAULT_PROMPT_VERSION = "v2";
 
-export function buildSystemPrompt(opts: { reviews: boolean; version?: string }): string {
+export function buildSystemPrompt(opts: { reviews: boolean; version?: string; maxPicks?: number }): string {
   const version = opts.version ?? process.env.FIND_PROMPT_VERSION ?? DEFAULT_PROMPT_VERSION;
   const claims = loadPrompt("find", version, opts.reviews ? "claims-reviews" : "claims-no-reviews");
-  return loadPrompt("find", version, "system").replace("{{CLAIMS_RULE}}", claims);
+  const base = loadPrompt("find", version, "system").replace("{{CLAIMS_RULE}}", claims);
+  if (!opts.maxPicks || opts.maxPicks <= 3) return base;
+  // Pool mode: the answer cache keeps the whole list and shows 3 at a time, rotating on repeat requests.
+  return (
+    base +
+    `\n\nPool mode (overrides "up to 3" above): pick up to ${opts.maxPicks} meals that fit, best first, from different vendors where possible. ` +
+    `The app shows 3 at a time and rotates through the rest, so message must not name or count specific meals; keep it general (for example "Here are some options.").`
+  );
 }
 
 export interface FindAgentOptions {
@@ -43,6 +51,11 @@ export interface FindAgentOptions {
   preSearch?: boolean;
   /** Gemini thinking level: MINIMAL, LOW, MEDIUM, HIGH or "default" (model's own). Env FIND_THINKING_LEVEL; default LOW. */
   thinkingLevel?: string;
+  /**
+   * Most picks final_answer may return (default 3). Set above 3 only behind CachedFinder,
+   * which stores the whole pool and shows 3 at a time, rotating on repeat requests.
+   */
+  maxPicks?: number;
 }
 
 export interface FindPick {
@@ -89,6 +102,7 @@ export class FindAgent {
   private timeoutMs: number;
   private deadlineMs: number;
   private maxRepairs: number;
+  private maxPicks: number;
   private thinkingLevel: ThinkingLevel | null;
 
   constructor(private opts: FindAgentOptions) {
@@ -101,6 +115,7 @@ export class FindAgent {
     this.timeoutMs = opts.timeoutMs ?? 8_000;
     this.deadlineMs = opts.deadlineMs ?? 20_000;
     this.maxRepairs = opts.maxRepairs ?? 1;
+    this.maxPicks = Math.min(10, Math.max(1, opts.maxPicks ?? 3));
     const level = (opts.thinkingLevel ?? process.env.FIND_THINKING_LEVEL ?? "LOW").toUpperCase();
     this.thinkingLevel = level === "DEFAULT" ? null : (ThinkingLevel as Record<string, ThinkingLevel>)[level] ?? ThinkingLevel.LOW;
   }
@@ -189,7 +204,7 @@ export class FindAgent {
         const args = (call.args ?? {}) as Record<string, unknown>;
 
         if (name === FINAL_ANSWER) {
-          const parsed = parseFinalAnswer(args);
+          const parsed = parseFinalAnswer(args, this.maxPicks);
           const verdict = parsed.ok
             ? checkGrounding({ message: parsed.message, picks: parsed.picks, seen, seenReviews, userText })
             : { ok: false as const, problems: [parsed.error] };
@@ -261,8 +276,8 @@ export class FindAgent {
             model,
             contents,
             config: {
-              systemInstruction: buildSystemPrompt({ reviews: !!this.opts.reviews }),
-              tools: [{ functionDeclarations: declarationsFor({ reviews: !!this.opts.reviews }) }],
+              systemInstruction: buildSystemPrompt({ reviews: !!this.opts.reviews, maxPicks: this.maxPicks }),
+              tools: [{ functionDeclarations: declarationsFor({ reviews: !!this.opts.reviews, maxPicks: this.maxPicks }) }],
               toolConfig: {
                 functionCallingConfig: {
                   mode: FunctionCallingConfigMode.ANY,
@@ -354,11 +369,11 @@ export function stripInlineReviewIds(text: string): string {
     .trim();
 }
 
-function parseFinalAnswer(args: Record<string, unknown>): ParsedFinal {
+function parseFinalAnswer(args: Record<string, unknown>, maxPicks = 3): ParsedFinal {
   const message = typeof args.message === "string" ? stripInlineReviewIds(args.message) : "";
   if (!message) return { ok: false, error: "message is required" };
   if (!Array.isArray(args.picks)) return { ok: false, error: "picks must be an array" };
-  if (args.picks.length > 3) return { ok: false, error: "at most 3 picks" };
+  if (args.picks.length > maxPicks) return { ok: false, error: `at most ${maxPicks} picks` };
   const picks: ProposedPick[] = [];
   for (const p of args.picks) {
     const mealId = typeof p?.meal_id === "string" ? p.meal_id : "";
