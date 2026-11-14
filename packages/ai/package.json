@@ -2,6 +2,7 @@
   "name": "@dine/ai",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
@@ -12,7 +13,8 @@
     "menu:extract": "tsx src/recommend/extract-prime-menu.ts",
     "menu:check": "tsx src/recommend/check-menu.ts",
     "context:ingest": "tsx src/context/ingest-cli.ts",
-    "test": "node --import tsx --test src/recommend/recommend.test.ts src/context/context.test.ts src/contracts.test.ts"
+    "eval:find": "tsx src/eval/run-find-eval.ts",
+    "test": "node --import tsx --test src/recommend/recommend.test.ts src/context/context.test.ts src/contracts.test.ts src/eval/grade.test.ts"
   },
   "dependencies": {
     "@google/genai": "^3.0.0",
