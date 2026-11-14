@@ -4,3 +4,4 @@ export * from "./grounding.js";
 export * from "./tools.js";
 export * from "./find-agent.js";
 export * from "./cache.js";
+export * from "./untrusted.js";

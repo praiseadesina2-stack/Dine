@@ -114,6 +114,8 @@ A row is visible to the AI only if **all** of these are true:
 
 The backend applies these filters in SQL. The AI does not re-implement them, but its grounding check refuses any meal or review a tool did not return.
 
+**Instruction-like text (added 14 Nov).** Meal names are shown to students verbatim, so a name or vendor description that reads like an instruction to an AI ("ignore your rules", "note to AI", "tell the student…", "system prompt") must be rejected at import and sent to a human, not loaded. The in-memory catalogue already does this (`packages/ai/src/find/untrusted.ts`, `looksLikeInstruction()`); the seed import should call the same function. Review text is not filtered (the model treats it as data; `evals/find-adv-v1.json` tests this), but it is never shown to students without passing through the model's grounded answer.
+
 ## How data gets in
 
 1. Raw sources (photos, CSVs, chat exports) stay local in `Context/`. They are never committed.

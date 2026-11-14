@@ -18,11 +18,13 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { VENDORS } from "../../../../apps/api/src/data/vendors.js";
-import { loadReviewStore } from "../context/sources.js";
+import { InMemoryReviewStore, type ReviewRecord, type ReviewStore } from "../context/reviews.js";
+import { REVIEWS_FILE, type DerivedReviews } from "../context/sources.js";
+import type { Catalogue } from "../find/catalogue.js";
 import type { MealRecord } from "../find/catalogue.js";
 import { DEFAULT_PROMPT_VERSION, FindAgent, type FindResult } from "../find/find-agent.js";
 import { primeCatalogue } from "../find/prime-catalogue.js";
-import { gradeCase, type EvalCase, type Grade } from "./grade.js";
+import { gradeCase, type CaseInject, type EvalCase, type Grade } from "./grade.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
@@ -68,18 +70,30 @@ async function main() {
   const set = JSON.parse(fs.readFileSync(path.join(EVAL_DIR, `${setName}.json`), "utf8")) as { name: string; cases: EvalCase[] };
   const cases = set.cases.filter((c) => !only || c.id.includes(only) || c.tags.includes(only));
 
-  const catalogue = primeCatalogue({ extraVendors: VENDORS });
-  const allMeals = new Map<string, MealRecord>();
-  for (const v of await catalogue.listVendors()) {
-    for (const m of (await catalogue.getVendor(v.vendorId))!.meals) allMeals.set(m.mealId, m);
-  }
-  const reviews = useReviews ? loadReviewStore() : null;
-  const agent = new FindAgent({ catalogue, reviews, model });
-  if (!agent.isConfigured()) throw new Error("GEMINI_API_KEY is not set in .env");
+  const baseReviews: ReviewRecord[] =
+    useReviews && fs.existsSync(REVIEWS_FILE) ? (JSON.parse(fs.readFileSync(REVIEWS_FILE, "utf8")) as DerivedReviews).reviews : [];
+  const build = (inject?: CaseInject) => {
+    const catalogue = primeCatalogue({ extraVendors: [...(inject?.vendors ?? []).map((v) => ({ ...v, status: "active" as const, sampleDescription: v.description })), ...VENDORS] });
+    const planted = (inject?.reviews ?? []).map((x, i): ReviewRecord => ({
+      reviewId: `REV-INJ-${i + 1}`, surveyVendorId: "V999", surveyVendorName: x.vendorId, vendorId: x.vendorId,
+      foodId: null, foodName: x.foodName ?? null, rating: x.rating ?? 5, sentiment: "positive", text: x.text,
+      reviewedAt: "2026-11-10T19:00:00+01:00", reviewType: "Free Text", source: { file: "eval-inject", row: i + 1, reviewId: `REV-INJ-${i + 1}` },
+    }));
+    const reviews: ReviewStore | null = useReviews && (baseReviews.length || planted.length) ? new InMemoryReviewStore([...baseReviews, ...planted]) : null;
+    return { catalogue, agent: new FindAgent({ catalogue, reviews, model }) };
+  };
+  const mealsOf = async (catalogue: Catalogue) => {
+    const all = new Map<string, MealRecord>();
+    for (const v of await catalogue.listVendors()) for (const m of (await catalogue.getVendor(v.vendorId))!.meals) all.set(m.mealId, m);
+    return all;
+  };
+  const shared = build();
+  if (!shared.agent.isConfigured()) throw new Error("GEMINI_API_KEY is not set in .env");
 
   const rows: Row[] = [];
   for (const [i, c] of cases.entries()) {
     if (i > 0 && delayMs > 0) await sleep(delayMs);
+    const { agent, catalogue } = c.inject ? build(c.inject) : shared;
     let result = await agent.find(c.query);
     let infraRetries = 0;
     while (isInfraFailure(result) && infraRetries < maxRetries) {
@@ -89,7 +103,7 @@ async function main() {
       infraRetries++;
       result = await agent.find(c.query);
     }
-    const grade = gradeCase(c, result, allMeals);
+    const grade = gradeCase(c, result, await mealsOf(catalogue));
     rows.push({ case: c, result, grade, infraRetries });
     const picks = result.ok ? result.picks.map((p) => `${p.meal.name} (${p.meal.priceKobo / 100})`).join("; ") : `fallback: ${result.reason}`;
     const t = result.trace;
