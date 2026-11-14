@@ -73,7 +73,7 @@ export type FindResult =
       ok: false;
       reason: "not_configured" | "model_error" | "timeout" | "ungrounded" | "too_many_steps";
       detail?: string;
-      /** Meals the pre-search found for the request (catalogue rows, stored prices), for the keyword fallback to show. */
+      /** Meals matching the request's food words or budget (catalogue rows, stored prices), for the keyword fallback to show. */
       candidates?: MealRecord[];
       trace: FindTrace;
     };
@@ -116,8 +116,6 @@ export class FindAgent {
       return r;
     };
 
-    if (!this.ai) return done({ ok: false, reason: "not_configured", trace });
-
     const seen = new Map<string, MealRecord>();
     const seenReviews = new Map<string, ReviewRecord>();
     const toolCtx = {
@@ -135,11 +133,13 @@ export class FindAgent {
       const pre = await preSearch(request, toolCtx);
       trace.toolMs += Date.now() - toolStarted;
       if (pre) {
-        candidates = pre.meals;
+        if (pre.matchedBy !== "overview") candidates = pre.meals;
         trace.steps.push(...pre.steps);
         firstTurn.push({ text: pre.text });
       }
     }
+    // After the pre-search, so keyword mode still has candidates without a key.
+    if (!this.ai) return done({ ok: false, reason: "not_configured", trace });
     const contents: Content[] = [{ role: "user", parts: firstTurn }];
 
     // maxSteps model calls for searching and answering, plus one extra call per allowed repair,
@@ -349,12 +349,37 @@ function parseFinalAnswer(args: Record<string, unknown>): ParsedFinal {
   return { ok: true, message: message.slice(0, 600), picks };
 }
 
+const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG")}`;
+
 /** Plain-text rendering for Telegram. Prices come from the catalogue, never from the model. */
 export function formatFindReply(result: Extract<FindResult, { ok: true }>): string {
   const lines = [result.message];
   result.picks.forEach((p, i) => {
-    const price = `₦${(p.meal.priceKobo / 100).toLocaleString("en-NG")}`;
-    lines.push("", `${i + 1}. ${p.meal.name} (${p.meal.vendorName}) - ${price}`, `   ${p.reason}`);
+    lines.push("", `${i + 1}. ${p.meal.name} (${p.meal.vendorName}) - ${naira(p.meal.priceKobo)}`, `   ${p.reason}`);
   });
   return lines.join("\n");
+}
+
+/** Meals the keyword fallback shows at most. */
+export const FALLBACK_PICKS = 3;
+
+/**
+ * Keyword-mode reply for when the model gave no usable answer (outage, timeout,
+ * ungrounded answer). Built only from catalogue rows the pre-search found for the
+ * student's own words, so it needs no model and makes no claim beyond name, vendor
+ * and stored price. With no matches it points the student to the menu buttons.
+ */
+export function formatFallbackReply(result: Extract<FindResult, { ok: false }>): string {
+  const meals = (result.candidates ?? []).filter((m) => m.available).slice(0, FALLBACK_PICKS);
+  if (!meals.length) {
+    return "I can't search properly right now. Try again in a minute, or tap Browse to see the menu.";
+  }
+  const lines = ["I can't give a full answer right now, but these match what you asked for:"];
+  meals.forEach((m, i) => lines.push("", `${i + 1}. ${m.name} (${m.vendorName}) - ${naira(m.priceKobo)}`));
+  return lines.join("\n");
+}
+
+/** Telegram text for any /find result: the model's answer, or the keyword fallback. */
+export function formatFindResult(result: FindResult): string {
+  return result.ok ? formatFindReply(result) : formatFallbackReply(result);
 }

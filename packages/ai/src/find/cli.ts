@@ -12,7 +12,7 @@ import { GoogleGenAI } from "@google/genai";
 import { VENDORS } from "../../../../apps/api/src/data/vendors.js";
 import { loadReviewStore, REVIEWS_FILE } from "../context/sources.js";
 import { primeCatalogue } from "./prime-catalogue.js";
-import { FindAgent, formatFindReply } from "./find-agent.js";
+import { FindAgent, formatFindResult } from "./find-agent.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
@@ -30,15 +30,14 @@ console.error(
 // Prime crawl first; the bot's vendor list (read only) fills in vendors that joined Prime after the crawl.
 const agent = new FindAgent({ catalogue: primeCatalogue({ extraVendors: VENDORS }), reviews });
 if (!agent.isConfigured()) {
-  console.error(`GEMINI_API_KEY is not set. Expected it in ${path.resolve(__dirname, "../../../../.env")}`);
-  process.exit(1);
+  console.error(`GEMINI_API_KEY is not set (expected in ${path.resolve(__dirname, "../../../../.env")}); answering in keyword mode.`);
 }
 
 async function ask(q: string, echo = false) {
   if (echo) console.log(`\nyou> ${q}`);
   const result = await agent.find(q);
-  if (result.ok) console.log("\n" + formatFindReply(result) + "\n");
-  else console.log(`\n[fallback: ${result.reason}] ${result.detail ?? ""}\n`);
+  if (!result.ok) console.log(`\n[fallback: ${result.reason}] ${result.detail ?? ""}`);
+  console.log("\n" + formatFindResult(result) + "\n");
   if (showTrace) {
     const t = result.trace;
     for (const a of t.attempts) console.log(`  (failed call: ${a.model} ${a.error})`);
