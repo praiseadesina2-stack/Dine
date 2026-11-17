@@ -20,14 +20,23 @@ import {
   CravingType,
   Recommendation
 } from "./engine/recommender.js";
-import { DineOrderingAgent, type MealSuggestion } from "@dine/ai";
+import {
+  DineOrderingAgent,
+  recommend,
+  planWeek,
+  FindAgent,
+  formatFindReply,
+  primeCatalogue,
+  loadReviewStore,
+  type MealSuggestion,
+  type RecommendRequest,
+} from "@dine/ai";
 import {
   registerRecommenderFlow,
   defaultRecSession,
   type RecSession
 } from "./recommender-flow.js";
 
-import { DineOrderingAgent } from "@dine/ai";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -471,6 +480,13 @@ bot.callbackQuery(/^order_vendor:(.+)$/, async (ctx) => {
   );
 });
 
+// Initialize /find Agent & Review Store
+const reviewStore = loadReviewStore();
+const findAgent = new FindAgent({
+  catalogue: primeCatalogue({ extraVendors: VENDORS }),
+  reviews: reviewStore,
+});
+
 // ----------------------------------------------------
 // 4. Utility Commands & Info
 // ----------------------------------------------------
@@ -478,11 +494,148 @@ bot.callbackQuery(/^order_vendor:(.+)$/, async (ctx) => {
 bot.api.setMyCommands([
   { command: "start", description: "Start Dine & open main menu" },
   { command: "decide", description: "✨ Help me decide what to eat" },
+  { command: "plan", description: "📅 Plan a 7-day meal timetable" },
+  { command: "find", description: "🔍 Natural language meal search with reviews" },
   { command: "tray", description: "🛒 View my meal tray" },
   { command: "vendors", description: "🔍 Browse campus vendors directory" },
   { command: "wallet", description: "💰 Check Dine wallet balance" },
   { command: "help", description: "ℹ️ How to use Dine" }
 ]).catch((err) => console.error("Could not register bot commands:", err));
+
+// /find command - Uses FindAgent with tool-calling and grounded review citations
+bot.command("find", async (ctx) => {
+  const query = ctx.match?.trim();
+  if (!query) {
+    await ctx.reply(
+      "🔍 *Find Meals with AI*\n\n" +
+        "Tell me what you're craving or looking for!\n\n" +
+        "Examples:\n" +
+        "• `/find something filling under 2000`\n" +
+        "• `/find protein rich chicken`\n" +
+        "• `/find pepper soup with fish`",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  const thinkingMsg = await ctx.reply("🔍 _Searching campus menus and student reviews..._", {
+    parse_mode: "Markdown",
+  });
+
+  try {
+    const result = await findAgent.find(query);
+    if (result.ok) {
+      const replyText = formatFindReply(result);
+      const kb = new InlineKeyboard();
+      result.picks.forEach((p, idx) => {
+        kb.text(`Pick #${idx + 1}: ${p.meal.name.slice(0, 18)}`, `pick_find:${p.meal.mealId}`).row();
+      });
+      kb.text("✨ Try Full Recommendation", "action_restart_decide");
+
+      await ctx.api.editMessageText(ctx.chat.id, thinkingMsg.message_id, replyText, {
+        reply_markup: kb,
+      });
+    } else {
+      await ctx.api.editMessageText(
+        ctx.chat.id,
+        thinkingMsg.message_id,
+        `😕 Could not find matching meals: ${result.reason}. Try a different craving or budget!`,
+        {
+          reply_markup: new InlineKeyboard().text("✨ Help Me Decide", "action_restart_decide"),
+        }
+      );
+    }
+  } catch (err: any) {
+    console.error("[FindAgent] Error:", err);
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      thinkingMsg.message_id,
+      "⚠️ An error occurred searching for meals. Please try again later."
+    );
+  }
+});
+
+// /plan command - Uses planWeek() to generate a full 7-day timetable
+bot.command("plan", async (ctx) => {
+  const session = getSession(ctx.from.id);
+  const budget = typeof session.budget === "number" ? session.budget : 2000;
+
+  const thinkingMsg = await ctx.reply("📅 _Generating your 7-day campus meal plan..._", {
+    parse_mode: "Markdown",
+  });
+
+  try {
+    const result = await planWeek({
+      budgetPerMeal: budget,
+      mealsPerDay: 3,
+      goals: session.recGoalsSelected?.length ? session.recGoalsSelected : ["healthy"],
+      cravings: session.recCravingsSelected?.length ? session.recCravingsSelected : ["filling"],
+    });
+
+    if (result.mode === "timetable") {
+      let msg = `📅 *Your 7-Day Meal Plan (₦${budget.toLocaleString()}/meal)*\n\n`;
+      for (const dayPlan of result.days.slice(0, 3)) {
+        msg += `*${dayPlan.day.toUpperCase()}*\n`;
+        for (const meal of dayPlan.meals) {
+          const slot = meal.slot.charAt(0).toUpperCase() + meal.slot.slice(1);
+          if (meal.pick) {
+            msg += `• *${slot}:* ${meal.pick.name}`;
+            if (meal.pick.orderable) msg += ` (₦${meal.pick.totalPrice?.toLocaleString()})`;
+            msg += "\n";
+          }
+        }
+        msg += "\n";
+      }
+      msg += "_Use ✨ Decide For Me for the full interactive planner!_";
+
+      await ctx.api.editMessageText(ctx.chat.id, thinkingMsg.message_id, msg, {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard()
+          .text("✨ Interactive Planner", "rec:mode:timetable")
+          .row()
+          .text("🛒 My Tray", "action_view_tray"),
+      });
+    }
+  } catch (err: any) {
+    console.error("[PlanWeek] Error:", err);
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      thinkingMsg.message_id,
+      "⚠️ Could not generate timetable. Please try again with /decide."
+    );
+  }
+});
+
+// Callback when user picks an item from /find
+bot.callbackQuery(/^pick_find:(.+)$/, async (ctx) => {
+  const mealId = ctx.match[1];
+  const meal = await findAgent['opts'].catalogue.getMeal(mealId);
+
+  if (!meal) {
+    await ctx.answerCallbackQuery({ text: "Meal item no longer available." });
+    return;
+  }
+
+  const tray = getTray(ctx.from.id);
+  tray.push({
+    itemName: meal.name,
+    vendorName: meal.vendorName,
+    price: Math.round(meal.priceKobo / 100),
+  });
+
+  const kb = new InlineKeyboard()
+    .text("🛒 View Tray & Checkout", "action_view_tray")
+    .text("🔍 Search More", "action_restart_decide");
+
+  await ctx.reply(
+    `🎉 *Added to Tray!*\n\n` +
+      `Added *${meal.name}* from *${meal.vendorName}* (₦${(meal.priceKobo / 100).toLocaleString()}).\n\n` +
+      `Your tray now has *${tray.length} item(s)*.`,
+    { parse_mode: "Markdown", reply_markup: kb }
+  );
+  await ctx.answerCallbackQuery({ text: "Added to tray! 🍽️" });
+});
+
 
 bot.command("start", async (ctx) => {
   const firstName = ctx.from?.first_name || "there";

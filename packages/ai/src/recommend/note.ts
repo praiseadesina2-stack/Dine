@@ -9,7 +9,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { ALLERGENS, COMPONENTS, COMPONENT_IDS, type Allergen } from "./knowledge.js";
 import { loadPrimeMenu, type PrimeMenu } from "./menu.js";
-import { EMPTY_NOTE, type NoteConstraints } from "./types.js";
 import { AVOIDABLE_PREPS, EMPTY_NOTE, type AvoidablePrep, type NoteConstraints } from "./types.js";
 
 export interface NoteOptions {
@@ -143,7 +142,6 @@ async function parseNoteModel(text: string, menu: PrimeMenu, apiKey: string, opt
       spice: { type: "string", enum: ["any", "mild", "spicy"] },
       unhandled: { type: "array", items: { type: "string" }, maxItems: 5 },
     },
-    required: ["exclude_allergens", "exclude_foods", "prefer_foods", "exclude_vendors", "prefer_vendors", "vegetarian", "no_pork", "spice", "unhandled"],
     required: ["exclude_allergens", "exclude_foods", "prefer_foods", "exclude_vendors", "prefer_vendors", "exclude_cooking", "vegetarian", "no_pork", "spice", "unhandled"],
   };
   const foods = Object.values(COMPONENTS).map((c) => `${c.id}: ${c.label} (${c.aliases.join(", ")})`).join("\n");
@@ -155,7 +153,6 @@ async function parseNoteModel(text: string, menu: PrimeMenu, apiKey: string, opt
   const models = (opts.model ?? process.env.GEMINI_MODEL ?? "gemini-3.8-flash").split(",").map((s) => s.trim()).filter(Boolean);
   let res;
   let lastErr: unknown;
-  for (const model of models) {
   // One quick retry per model on 429/5xx: Gemini overload is brief, and failing straight to keywords loses detail
   // (e.g. maxHeat). A timeout is not retried (status is unset), it moves on to the next model, so the wait stays bounded.
   const attempts = models.flatMap((m) => [m, m]);
@@ -175,7 +172,6 @@ async function parseNoteModel(text: string, menu: PrimeMenu, apiKey: string, opt
           responseMimeType: "application/json",
           responseJsonSchema: schema,
           temperature: 0,
-          abortSignal: AbortSignal.timeout(opts.timeoutMs ?? 6000),
           abortSignal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
         },
       });
