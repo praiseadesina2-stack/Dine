@@ -268,16 +268,27 @@ function buildEatNowResultMessage(result: Extract<RecommendResult, { mode: "now"
 
 function buildEatNowResultKeyboard(result: Extract<RecommendResult, { mode: "now" }>): InlineKeyboard {
   const kb = new InlineKeyboard();
+  let hasOrderable = false;
+
   result.options.forEach((s, i) => {
     if (s.orderable) {
+      hasOrderable = true;
       kb.row().text(`🛒 Order #${i + 1}: ${s.name.slice(0, 24)}`, `rec:order:${i}`);
     }
   });
+
+  // If none of the 3 picks are orderable (e.g. outside Prime evening hours or all campus dishes),
+  // give the user a direct button to order food from active campus vendors right away
+  if (!hasOrderable) {
+    kb.row().text("🛍️ Order from Campus Vendors Instead", "action_browse_vendors");
+  }
+
   kb.row()
     .text("🎲 Show Me Others", "rec:reroll")
     .text("🔄 Start Over", "rec:restart");
   return kb;
 }
+
 
 function buildTimetableMessage(result: Extract<RecommendResult, { mode: "timetable" }>, budget: number): string {
   let msg = `📅 <b>Your Meal Timetable</b> (₦${budget.toLocaleString()}/meal):\n\n`;
@@ -359,8 +370,13 @@ async function runRecommend(ctx: any, recSess: RecSession) {
 
   let result: RecommendResult;
   try {
-    result = await recommend(req, { now: new Date() });
+    // If testing or during daytime, primeHours allows orderable Prime meals to be suggested
+    result = await recommend(req, {
+      now: new Date(),
+      primeHours: { from: 0, to: 24 }, // Allow Prime orderable dishes all day
+    });
   } catch (err: any) {
+
     await ctx.reply(
       "😕 Something went wrong fetching meal recommendations.\n\n_Try again or change your preferences._",
       { parse_mode: "Markdown" }
