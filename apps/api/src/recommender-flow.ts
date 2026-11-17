@@ -509,36 +509,11 @@ export function registerRecommenderFlow(
     await ctx.answerCallbackQuery();
     const rs = getRecSession(ctx.from.id);
     rs.recGoals = rs.recGoalsSelected;
-    rs.recStep = "cravings";
-    rs.recCravingsSelected = [];
-    const { text, kb } = renderCravingsStep([]);
-    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: kb });
-  });
-
-  // ── Cravings (multi-select) ───────────────────────────────────────────────
-  bot.callbackQuery(new RegExp(`^rec:craving:(${CRAVINGS.join("|")})$`), async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const rs = getRecSession(ctx.from.id);
-    const craving = ctx.match[1] as Craving;
-    if (rs.recCravingsSelected.includes(craving)) {
-      rs.recCravingsSelected = rs.recCravingsSelected.filter((c) => c !== craving);
-    } else {
-      rs.recCravingsSelected.push(craving);
-    }
-    const { text, kb } = renderCravingsStep(rs.recCravingsSelected);
-    try {
-      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: kb });
-    } catch {}
-  });
-
-  bot.callbackQuery("rec:cravings:done", async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const rs = getRecSession(ctx.from.id);
-    rs.recCravings = rs.recCravingsSelected;
     rs.recStep = "budget";
     const { text, kb } = renderBudgetStep();
     await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: kb });
   });
+
 
   // ── Budget (preset) ───────────────────────────────────────────────────────
   bot.callbackQuery(/^rec:budget:(\d+)$/, async (ctx) => {
