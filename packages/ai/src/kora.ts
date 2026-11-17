@@ -34,6 +34,14 @@ export interface KoraDisbursementResult {
   raw?: any;
 }
 
+export interface AccountResolveResult {
+  success: boolean;
+  accountName?: string;
+  accountNumber?: string;
+  bankCode?: string;
+  message?: string;
+}
+
 export class KoraPaymentService {
   private secretKey: string;
   private baseUrl: string = "https://api.korapay.com/merchant/api/v1";
@@ -44,7 +52,7 @@ export class KoraPaymentService {
   }
 
   public isConfigured(): boolean {
-    return Boolean(this.secretKey);
+    return Boolean(this.secretKey && this.secretKey.trim().length > 0);
   }
 
   /**
@@ -75,7 +83,7 @@ export class KoraPaymentService {
       });
 
       if (!response.ok) {
-        return null;
+        return "090567";
       }
 
       const body = (await response.json()) as any;
@@ -97,11 +105,54 @@ export class KoraPaymentService {
       console.error("[Kora] Error fetching banks:", e);
     }
 
-    return null;
+    return "090567"; // Fallback to Flutterwave MFB NIBSS code
   }
 
   /**
-   * Disburse/transfer money directly to destination bank account
+   * Verify bank account name before sending money (Name Inquiry)
+   */
+  public async resolveAccount(accountNumber: string, bankCode: string): Promise<AccountResolveResult> {
+    if (!this.isConfigured()) {
+      return { success: false, message: "Kora secret key not configured." };
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/misc/banks/resolve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.secretKey}`,
+        },
+        body: JSON.stringify({
+          bank: bankCode,
+          account: accountNumber,
+        }),
+      });
+
+      const data = (await response.json()) as any;
+      if (response.ok && data?.status && data?.data) {
+        return {
+          success: true,
+          accountName: data.data.account_name,
+          accountNumber: data.data.account_number,
+          bankCode: data.data.bank_code || bankCode,
+        };
+      }
+
+      return {
+        success: false,
+        message: data?.message || "Account verification failed",
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        message: e?.message || "Error resolving account",
+      };
+    }
+  }
+
+  /**
+   * Disburse/transfer money directly to destination bank account (e.g. Prime That)
    */
   public async disburse(payload: KoraDisbursementPayload): Promise<KoraDisbursementResult> {
     if (!this.isConfigured()) {
@@ -174,5 +225,52 @@ export class KoraPaymentService {
       };
     }
   }
-}
 
+  /**
+   * Verify payout status by reference
+   */
+  public async verifyPayout(reference: string): Promise<KoraDisbursementResult> {
+    if (!this.isConfigured()) {
+      return {
+        success: false,
+        status: "not_configured",
+        reference,
+        message: "KORA_SECRET_KEY not set",
+      };
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/transactions/disburse/${encodeURIComponent(reference)}`, {
+        headers: {
+          Authorization: `Bearer ${this.secretKey}`,
+        },
+      });
+
+      const data = (await response.json()) as any;
+      if (response.ok && data?.status && data?.data) {
+        return {
+          success: data.data.status === "success",
+          status: data.data.status,
+          reference: data.data.reference || reference,
+          message: data.message || `Payout is ${data.data.status}`,
+          raw: data,
+        };
+      }
+
+      return {
+        success: false,
+        status: data?.data?.status || "unknown",
+        reference,
+        message: data?.message || "Could not verify payout",
+        raw: data,
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        status: "error",
+        reference,
+        message: e?.message || "Network error checking payout status",
+      };
+    }
+  }
+}
