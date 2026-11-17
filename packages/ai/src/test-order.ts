@@ -38,6 +38,11 @@ async function runTestOrder() {
   }
   if (result.orderRef) console.log("Prime order ref:", result.orderRef);
   if (result.totalKobo != null) console.log("Prime total: ₦" + result.totalKobo / 100);
+  if (result.payment) console.log(`Payment: ${result.payment.status} (${result.payment.method}): ${result.payment.detail}`);
+  if (result.topUp) {
+    const a = result.topUp.fundingAccount;
+    console.log(`Prime wallet low: top up at least ₦${result.topUp.shortfallKobo / 100}${a ? ` to ${a.accountNumber} (${a.bankName})` : ""}`);
+  }
 }
 
 runTestOrder().catch(console.error);

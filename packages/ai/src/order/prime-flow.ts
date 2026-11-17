@@ -13,7 +13,13 @@
  * Every step fails closed: a button is pressed only on an exact (normalised) label
  * match, never a "close enough" one; anything unexpected stops the order with a code.
  * Nothing here is a model.
+ *
+ * Payment (order/prime-wallet.ts): the order is paid from the Dine-owned Prime account's
+ * wallet. The flow reads the wallet before ordering (stops with PRIME_WALLET_LOW, cart
+ * untouched, if it cannot cover the total) and again after checkout; only an exact drop
+ * by the order total counts as paid.
  */
+import { judgePayment, readPrimeWallet, WALLET_PAY_LABELS, type FundingAccount, type PaymentEvidence, type PrimeWallet } from "./prime-wallet.js";
 
 export interface BotButton {
   row: number;
@@ -57,6 +63,7 @@ export type OrderFailure =
   | "PRICE_CHANGED"
   | "CART_MISMATCH"
   | "CHECKOUT_UNMAPPED"
+  | "PRIME_WALLET_LOW"
   | "UNEXPECTED_SCREEN"
   | "BOT_ERROR";
 
@@ -68,6 +75,8 @@ export type OrderFlowResult =
       paystackUrl?: string;
       /** Prime's order reference, when its confirmation shows one. */
       orderRef?: string;
+      /** How the order was paid, proven by the Prime wallet balance. Capture the student's reservation only on "verified". */
+      payment: PaymentEvidence;
       steps: string[];
     }
   | {
@@ -79,6 +88,10 @@ export type OrderFlowResult =
       cartTouched: boolean;
       /** Prime's total, once the item screen was read. */
       totalKobo?: number;
+      /** PRIME_WALLET_LOW only: how much the backend must top up, and where to send it. */
+      topUp?: { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount };
+      /** Set when checkout was pressed: what the wallet shows about payment. "uncertain" means reconcile before any retry. */
+      payment?: PaymentEvidence;
       steps: string[];
     };
 
@@ -171,8 +184,11 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
   let stage: OrderStage = "start";
   let cartTouched = false;
   let totalKobo: number | undefined;
-  const fail = (code: OrderFailure, detail: string): OrderFlowResult => ({
-    ok: false, code, stage, detail, cartTouched, ...(totalKobo != null ? { totalKobo } : {}), steps,
+  let payment: PaymentEvidence | undefined;
+  /** Set once checkout is pressed: from then on money may have moved. */
+  let paymentPending: { amountKobo: number; balanceBeforeKobo: number } | undefined;
+  const fail = (code: OrderFailure, detail: string, extra: { topUp?: { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount } } = {}): OrderFlowResult => ({
+    ok: false, code, stage, detail, cartTouched, ...(totalKobo != null ? { totalKobo } : {}), ...(payment ? { payment } : {}), ...extra, steps,
   });
   const press = async (screen: BotScreen, label: string, note = label) => {
     const b = exactButton(screen, label);
@@ -189,6 +205,16 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
     const cart = await press(screen, "🛒 My Cart");
     if (!cart) return fail("UNEXPECTED_SCREEN", "home screen has no My Cart button");
     if (!EMPTY_CART.test(cart.text)) return fail("CART_NOT_EMPTY", "the Prime cart already has items; clear it before ordering");
+
+    // 1b. The Prime wallet balance before ordering: checked against the total at the item
+    // screen, and the baseline that proves payment after checkout.
+    let walletBefore: PrimeWallet;
+    try {
+      walletBefore = await readPrimeWallet(bot);
+    } catch (err: any) {
+      return fail("UNEXPECTED_SCREEN", `Prime wallet: ${err?.message ?? err}`);
+    }
+    steps.push(`read Prime wallet: ₦${walletBefore.balanceKobo / 100}`);
 
     // 2. Home → locations.
     stage = "locations";
@@ -248,6 +274,12 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
     const expectedTotal = parsed.priceKobo + (parsed.packKobo ?? 0) * (parsed.packs ?? 0);
     if (parsed.totalKobo !== expectedTotal) return fail("UNEXPECTED_SCREEN", `total ₦${parsed.totalKobo / 100} does not add up`);
     steps.push(`item verified: ${parsed.name}, total ₦${parsed.totalKobo / 100}`);
+    if (walletBefore.balanceKobo < parsed.totalKobo) {
+      const shortfallKobo = parsed.totalKobo - walletBefore.balanceKobo;
+      return fail("PRIME_WALLET_LOW", `Prime wallet has ₦${walletBefore.balanceKobo / 100}, order needs ₦${parsed.totalKobo / 100}`, {
+        topUp: { shortfallKobo, balanceKobo: walletBefore.balanceKobo, ...(walletBefore.fundingAccount ? { fundingAccount: walletBefore.fundingAccount } : {}) },
+      });
+    }
 
     // 6. Add to cart.
     stage = "add_to_cart";
@@ -268,15 +300,48 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
     if (!checkoutLabel) {
       return fail("CHECKOUT_UNMAPPED", `no known checkout button on the cart screen (buttons: ${filled.buttons.map((b) => b.label).join(", ")})`);
     }
-    const after = await press(filled, checkoutLabel, "checkout");
+    paymentPending = { amountKobo: parsed.totalKobo, balanceBeforeKobo: walletBefore.balanceKobo };
+    let after = await press(filled, checkoutLabel, "checkout");
     if (!after) return fail("BOT_ERROR", "checkout button could not be pressed");
+    // Prime may ask how to pay: always the wallet, never a card or another method.
+    const payLabel = WALLET_PAY_LABELS.find((l) => exactButton(after!, l));
+    let paidWithWallet = false;
+    if (payLabel) {
+      const paid = await press(after, payLabel, "pay from Prime wallet");
+      if (!paid) return fail("BOT_ERROR", "wallet pay button could not be pressed");
+      after = paid;
+      paidWithWallet = true;
+    }
     const url = after.text.match(PAYSTACK)?.[0] ?? after.buttons.find((b) => b.url && PAYSTACK.test(b.url))?.url;
     const ref = after.text.match(ORDER_REF)?.[1];
+
+    // Proof of payment: the wallet balance, not the checkout message. From here on
+    // money may have moved, so every outcome carries the evidence.
+    let afterKobo: number | undefined;
+    try {
+      afterKobo = (await readPrimeWallet(bot)).balanceKobo;
+      steps.push(`read Prime wallet: ₦${afterKobo / 100}`);
+    } catch {
+      steps.push("could not read Prime wallet after checkout");
+    }
+    const judged = judgePayment(walletBefore.balanceKobo, afterKobo, parsed.totalKobo);
+    payment = {
+      method: url && !paidWithWallet ? "paystack_link" : "prime_wallet",
+      amountKobo: parsed.totalKobo,
+      balanceBeforeKobo: walletBefore.balanceKobo,
+      ...(afterKobo != null ? { balanceAfterKobo: afterKobo } : {}),
+      ...judged,
+    };
+    steps.push(`payment ${payment.status}: ${payment.detail}`);
+
     if (!url && !CONFIRMED.test(after.text)) return fail("UNEXPECTED_SCREEN", "checkout gave neither a payment link nor an order confirmation");
 
     stage = "done";
-    return { ok: true, totalKobo: parsed.totalKobo, ...(url ? { paystackUrl: url } : {}), ...(ref ? { orderRef: ref } : {}), steps };
+    return { ok: true, totalKobo: parsed.totalKobo, ...(url ? { paystackUrl: url } : {}), ...(ref ? { orderRef: ref } : {}), payment, steps };
   } catch (err: any) {
+    if (paymentPending && !payment) {
+      payment = { method: "prime_wallet", status: "uncertain", ...paymentPending, detail: "Prime stopped replying after checkout; reconcile the wallet before any retry" };
+    }
     return fail("BOT_ERROR", String(err?.message ?? err).slice(0, 200));
   }
 }

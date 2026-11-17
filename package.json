@@ -7,7 +7,8 @@
     "test": "pnpm -r test",
     "agent:auth": "pnpm --filter @dine/ai run auth",
     "agent:order": "pnpm --filter @dine/ai run test:order",
-    "agent:find": "pnpm --filter @dine/ai run find"
+    "agent:find": "pnpm --filter @dine/ai run find",
+    "pay:demo": "pnpm --filter @dine/ai run pay:demo"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

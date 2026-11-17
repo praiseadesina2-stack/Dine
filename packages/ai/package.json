@@ -15,6 +15,7 @@
     "context:ingest": "tsx src/context/ingest-cli.ts",
     "eval:find": "tsx src/eval/run-find-eval.ts",
     "demo": "tsx src/demo.ts",
+    "pay:demo": "tsx src/order/pay-demo.ts",
     "test": "node --import tsx --test src/recommend/recommend.test.ts src/context/context.test.ts src/contracts.test.ts src/eval/grade.test.ts src/plan/plan.test.ts src/find/presearch.test.ts src/order/prime-flow.test.ts src/plan/flow.test.ts src/find/fallback.test.ts src/find/cache.test.ts"
   },
   "dependencies": {

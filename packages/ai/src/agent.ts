@@ -16,6 +16,7 @@ import {
   runOrderFlow,
   type BotButton, type BotScreen, type OrderFailure, type OrderStage, type OrderTarget as FlowTarget, type PrimeBot,
 } from "./order/prime-flow.js";
+import { judgeTopUp, readPrimeWallet, type FundingAccount, type PaymentEvidence, type PrimeWallet, type TopUpCheck } from "./order/prime-wallet.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,6 +42,14 @@ export interface AgentOrderResult {
   totalKobo?: number;
   paystackUrl?: string;
   orderRef?: string;
+  /**
+   * Proof of payment from the Prime wallet balance (set once checkout was pressed).
+   * Capture the student's reservation only on status "verified"; on "uncertain",
+   * reconcile before any retry; on "not_paid", release it.
+   */
+  payment?: PaymentEvidence;
+  /** PRIME_WALLET_LOW only: top the Prime wallet up by at least shortfallKobo, then retry. */
+  topUp?: { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount };
   stepsCompleted: string[];
 }
 
@@ -89,9 +98,37 @@ export class DineOrderingAgent {
 
   /** Places one order on Prime. Queues behind any order already running on this session. */
   public async placeOrder(target: OrderTarget): Promise<AgentOrderResult> {
+    return this.withSession(() => this.placeOrderNow(target));
+  }
+
+  /**
+   * Reads the Dine account's Prime wallet: balance and the bank account that funds it.
+   * The backend uses it for the float check and before a top-up.
+   */
+  public async readPrimeWallet(botUsername?: string): Promise<PrimeWallet> {
+    return this.withSession(async () => readPrimeWallet(await this.primeBot(botUsername)));
+  }
+
+  /**
+   * After a Kora payout to the Prime funding account: has it reached the Prime wallet?
+   * Polls until the balance rose by at least amountKobo over previousBalanceKobo, or the
+   * time runs out. "not_yet" never means pay again: reconcile the payout with Kora first.
+   */
+  public async checkTopUp(args: { previousBalanceKobo: number; amountKobo: number; timeoutMs?: number; pollMs?: number; botUsername?: string }): Promise<TopUpCheck> {
+    const pollMs = args.pollMs ?? 10_000;
+    const deadline = Date.now() + (args.timeoutMs ?? 60_000);
+    while (true) {
+      const check = judgeTopUp(args.previousBalanceKobo, await this.readPrimeWallet(args.botUsername), args.amountKobo);
+      if (check.status === "landed" || Date.now() + pollMs > deadline) return check;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+  }
+
+  /** One Prime conversation at a time per Telegram session. */
+  private async withSession<T>(work: () => Promise<T>): Promise<T> {
     const key = this.sessionString || "default";
     const previous = sessionLocks.get(key) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(() => this.placeOrderNow(target));
+    const run = previous.catch(() => undefined).then(work);
     sessionLocks.set(key, run);
     try {
       return await run;
@@ -100,12 +137,16 @@ export class DineOrderingAgent {
     }
   }
 
+  private async primeBot(botUsername?: string): Promise<PrimeBot> {
+    const client = await this.getClient();
+    const username = (botUsername || process.env.PRIME_BOT_USERNAME || "orderfromprimebot").replace(/^@/, "");
+    return new TelegramPrimeBot(client, await client.getEntity(username));
+  }
+
   private async placeOrderNow(target: OrderTarget): Promise<AgentOrderResult> {
     let bot: PrimeBot;
     try {
-      const client = await this.getClient();
-      const username = (target.botUsername || process.env.PRIME_BOT_USERNAME || "orderfromprimebot").replace(/^@/, "");
-      bot = new TelegramPrimeBot(client, await client.getEntity(username));
+      bot = await this.primeBot(target.botUsername);
     } catch (err: any) {
       return { success: false, code: "BOT_ERROR", stage: "start", cartTouched: false, message: `Could not reach Prime: ${err?.message ?? err}`, stepsCompleted: [] };
     }
@@ -116,10 +157,15 @@ export class DineOrderingAgent {
         success: true,
         stage: "done",
         cartTouched: true,
-        message: r.paystackUrl ? "Order placed on Prime; checkout link ready." : "Order placed on Prime.",
+        message:
+          r.payment.status === "verified" ? "Order placed on Prime and paid from the Prime wallet."
+          : r.payment.status === "uncertain" ? "Order placed on Prime; payment is uncertain, reconcile before any retry."
+          : r.paystackUrl ? "Order placed on Prime; not paid yet, Prime returned a checkout link."
+          : "Order placed on Prime; not paid yet.",
         totalKobo: r.totalKobo,
         paystackUrl: r.paystackUrl,
         orderRef: r.orderRef,
+        payment: r.payment,
         stepsCompleted: r.steps,
       };
     }
@@ -130,6 +176,8 @@ export class DineOrderingAgent {
       cartTouched: r.cartTouched,
       message: r.detail,
       totalKobo: r.totalKobo,
+      ...(r.payment ? { payment: r.payment } : {}),
+      ...(r.topUp ? { topUp: r.topUp } : {}),
       stepsCompleted: r.steps,
     };
   }

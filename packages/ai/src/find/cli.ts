@@ -36,7 +36,7 @@ if (!agent.isConfigured()) {
 async function ask(q: string, echo = false) {
   if (echo) console.log(`\nyou> ${q}`);
   const result = await agent.find(q);
-  if (!result.ok) console.log(`\n[fallback: ${result.reason}] ${result.detail ?? ""}`);
+  if (!result.ok) console.log(`\n[keyword mode: ${result.reason}${shortDetail(result.detail)}]${showTrace && result.detail ? `\n${result.detail}` : ""}`);
   console.log("\n" + formatFindResult(result) + "\n");
   if (showTrace) {
     const t = result.trace;
@@ -44,6 +44,15 @@ async function ask(q: string, echo = false) {
     for (const s of t.steps) console.log(`  ${s.tool} ${JSON.stringify(s.args)}${s.error ? `  ERROR: ${s.error}` : ""}`);
     console.log(`  model=${t.model} in=${t.inputTokens} out=${t.outputTokens} ${t.ms}ms rejections=${t.rejections.length}\n`);
   }
+}
+
+/** One readable line from a provider error (full text only with --trace). */
+function shortDetail(detail?: string): string {
+  if (!detail) return "";
+  if (/RESOURCE_EXHAUSTED|"code":\s*429/.test(detail)) {
+    return /PerDay/.test(detail) ? ", Gemini daily quota used up" : ", Gemini rate limit, try again in a minute";
+  }
+  return `, ${detail.replace(/\s+/g, " ").slice(0, 100)}`;
 }
 
 /** Print the Gemini models this key can call. */

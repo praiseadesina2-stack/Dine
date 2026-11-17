@@ -4,80 +4,10 @@
  * screens are SYNTHETIC here and marked as such.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
-import { exactButton, normalise, parseItemScreen, runOrderFlow, type BotButton, type BotScreen, type OrderTarget, type PrimeBot } from "./prime-flow.js";
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const crawl = JSON.parse(fs.readFileSync(path.join(here, "fixtures/prime-crawl.json"), "utf8")) as {
-  start: string;
-  screens: { id: string; kind: string; label: string; text: string; buttons: (BotButton & { to?: string })[] }[];
-};
-const byId = new Map(crawl.screens.map((s) => [s.id, s]));
-const itemScreen = (name: string) => crawl.screens.find((s) => s.kind === "item" && s.label === name)!;
-
-interface FakeOptions {
-  /** Items already in the Prime cart before the order starts. */
-  cartAtStart?: string[];
-  /** SYNTHETIC: buttons on a non-empty cart screen. */
-  cartButtons?: string[];
-  /** SYNTHETIC: what pressing the checkout button shows. */
-  checkoutReply?: BotScreen;
-  /** Change the price Prime shows on item screens (kobo → naira text). */
-  priceOverride?: Record<string, number>;
-  /** Make a vendor's menu (and its list line) say Closed. */
-  closed?: string[];
-}
-
-/** Replays crawled screens; keeps a cart so Add to cart and My Cart behave like a real bot. */
-class FakePrime implements PrimeBot {
-  cart: string[];
-  clicks: string[] = [];
-  private current = "";
-
-  constructor(private o: FakeOptions = {}) {
-    this.cart = [...(o.cartAtStart ?? [])];
-  }
-
-  private screen(id: string): BotScreen {
-    const s = byId.get(id)!;
-    this.current = id;
-    let text = s.text;
-    for (const v of this.o.closed ?? []) text = text.replace(`${v} · 🟢 Active`, `${v} · 🔴 Closed`);
-    if (s.kind === "item" && this.o.priceOverride?.[s.label] != null) {
-      const naira = this.o.priceOverride[s.label] / 100;
-      text = text.replace(/Price: ₦\d+/, `Price: ₦${naira}`).replace(/Total: ₦\d+/, `Total: ₦${naira}`);
-    }
-    return { text, buttons: s.buttons.map(({ to: _to, ...b }) => b) };
-  }
-
-  async start() {
-    return this.screen(crawl.start);
-  }
-
-  async click(screen: BotScreen, button: BotButton): Promise<BotScreen> {
-    this.clicks.push(button.label);
-    const node = byId.get(this.current)!;
-    if (normalise(button.label) === "my cart") {
-      if (!this.cart.length) return this.screen(crawl.screens.find((s) => s.label === "Cart (empty)")!.id);
-      // SYNTHETIC cart screen.
-      return {
-        text: `🛒 Your Cart\n\n${this.cart.map((i) => `${i} × 1`).join("\n")}`,
-        buttons: (this.o.cartButtons ?? []).map((label, col) => ({ row: 0, col, label })),
-      };
-    }
-    if (normalise(button.label) === "add to cart") {
-      this.cart.push(node.label);
-      return { text: "✅ Added to cart", buttons: [] };
-    }
-    if (this.o.checkoutReply && (this.o.cartButtons ?? []).includes(button.label)) return this.o.checkoutReply;
-    const to = node.buttons.find((b) => b.row === button.row && b.col === button.col)?.to;
-    if (!to) throw new Error(`fixture has no screen behind "${button.label}"`);
-    return this.screen(to);
-  }
-}
+import { exactButton, normalise, parseItemScreen, runOrderFlow, type BotScreen, type OrderTarget } from "./prime-flow.js";
+import { judgePayment, judgeTopUp, parseWalletScreen } from "./prime-wallet.js";
+import { crawl, FakePrime, itemScreen, walletText, type FakeOptions } from "./sim-prime.js";
 
 const shawarma: OrderTarget = { vendorName: "Slash Shawarma", itemName: "Shawarma + 1 Sausage", expectedPriceKobo: 200_000 };
 
@@ -162,6 +92,73 @@ test("stops before touching the cart: not empty, closed, missing vendor or item,
 test("a closed vendor in the list is refused (Waffledom is closed in the crawl)", async () => {
   const r = await runOrderFlow(new FakePrime(), { vendorName: "Waffledom", itemName: "Circle Waffle", expectedPriceKobo: 70_000 });
   assert.ok(!r.ok && r.code === "VENDOR_CLOSED");
+});
+
+test("wallet screen parsing (real crawled format)", () => {
+  assert.deepEqual(parseWalletScreen(walletText(0)), { balanceKobo: 0, fundingAccount: { accountNumber: "9894065716", bankName: "Flutterwave MFB (Formerly OK MFB)" } });
+  assert.equal(parseWalletScreen(walletText(1_250_050))?.balanceKobo, 1_250_050, "₦12,500.50 with thousands separator and kobo");
+  assert.equal(parseWalletScreen("👤 My Profile\n\nWallet balance: ₦0"), null, "the profile line is not the wallet screen");
+});
+
+const CHECKOUT = { cartButtons: ["Checkout"] };
+
+test("a low Prime wallet stops before the cart and says how much to top up, and where", async () => {
+  const bot = new FakePrime({ walletKobo: 150_000 });
+  const r = await runOrderFlow(bot, shawarma);
+  assert.ok(!r.ok && r.code === "PRIME_WALLET_LOW", JSON.stringify(r));
+  assert.ok(!r.ok && !r.cartTouched && bot.cart.length === 0);
+  assert.deepEqual(!r.ok && r.topUp, { shortfallKobo: 50_000, balanceKobo: 150_000, fundingAccount: { accountNumber: "9894065716", bankName: "Flutterwave MFB (Formerly OK MFB)" } });
+});
+
+test("paid from the wallet: verified only when the balance drops by exactly the total (SYNTHETIC checkout)", async () => {
+  const bot = new FakePrime({ ...CHECKOUT, walletKobo: 500_000, checkoutReply: { text: "✅ Order placed! Order ID: PR-90001", buttons: [] } });
+  const r = await runOrderFlow(bot, shawarma);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.ok && r.payment, { method: "prime_wallet", status: "verified", amountKobo: 200_000, balanceBeforeKobo: 500_000, balanceAfterKobo: 300_000, detail: "wallet went ₦5000 → ₦3000" });
+  assert.equal(r.ok && r.orderRef, "PR-90001");
+});
+
+test("when Prime asks how to pay, the agent picks the wallet (SYNTHETIC checkout)", async () => {
+  const bot = new FakePrime({
+    ...CHECKOUT,
+    checkoutReply: { text: "How would you like to pay?", buttons: [{ row: 0, col: 0, label: "💳 Pay with card" }, { row: 1, col: 0, label: "👛 Pay with wallet" }] },
+    walletPayButton: { label: "👛 Pay with wallet", reply: { text: "Order confirmed 🎉", buttons: [] } },
+  });
+  const r = await runOrderFlow(bot, shawarma);
+  assert.ok(r.ok && r.payment.status === "verified", JSON.stringify(r));
+  assert.ok(!bot.clicks.some((c) => /card/i.test(c)), "never pays by card");
+});
+
+test("a Paystack link alone is not a payment", async () => {
+  const bot = new FakePrime({ ...CHECKOUT, checkoutReply: { text: "Pay here: https://checkout.paystack.com/abc123", buttons: [] } });
+  const r = await runOrderFlow(bot, shawarma);
+  assert.ok(r.ok && r.payment.method === "paystack_link" && r.payment.status === "not_paid", JSON.stringify(r));
+});
+
+test("a wrong charge or a lost reply after checkout is uncertain, never verified", async () => {
+  const wrong = await runOrderFlow(new FakePrime({ ...CHECKOUT, chargeOverrideKobo: 220_000, checkoutReply: { text: "Order placed!", buttons: [] } }), shawarma);
+  assert.ok(wrong.ok && wrong.payment.status === "uncertain" && /moved by ₦2200/.test(wrong.payment.detail), JSON.stringify(wrong));
+
+  const lost = await runOrderFlow(new FakePrime({ ...CHECKOUT, failAfterCheckout: true, checkoutReply: { text: "Order placed!", buttons: [] } }), shawarma);
+  assert.ok(lost.ok && lost.payment.status === "uncertain" && lost.payment.balanceAfterKobo === undefined, JSON.stringify(lost));
+});
+
+test("a bot error after checkout carries an uncertain payment", async () => {
+  const bot = new FakePrime({ ...CHECKOUT, checkoutReply: { text: "Order placed!", buttons: [] } });
+  const click = bot.click.bind(bot);
+  bot.click = async (s, b) => {
+    if (b.label === "Checkout") throw new Error("Prime did not reply in time");
+    return click(s, b);
+  };
+  const r = await runOrderFlow(bot, shawarma);
+  assert.ok(!r.ok && r.code === "BOT_ERROR" && r.payment?.status === "uncertain", JSON.stringify(r));
+});
+
+test("top-up check: landed only when the balance rose by the payout amount", () => {
+  const wallet = (kobo: number) => parseWalletScreen(walletText(kobo))!;
+  assert.equal(judgeTopUp(100_000, wallet(600_000), 500_000).status, "landed");
+  assert.equal(judgeTopUp(100_000, wallet(400_000), 500_000).status, "not_yet");
+  assert.equal(judgePayment(500_000, 500_000, 200_000).status, "not_paid");
 });
 
 test("a bot error mid-flow is a clean failure, not a throw", async () => {

@@ -10,3 +10,4 @@ export * from "./plan/index.js";
 export * from "./recommend/index.js";
 export { loadReviewStore } from "./context/sources.js";
 export type { OrderFailure, OrderStage } from "./order/prime-flow.js";
+export type { FundingAccount, PaymentEvidence, PaymentStatus, PrimeWallet, TopUpCheck } from "./order/prime-wallet.js";
