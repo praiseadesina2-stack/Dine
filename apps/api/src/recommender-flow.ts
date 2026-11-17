@@ -302,11 +302,43 @@ function buildTimetableMessage(result: Extract<RecommendResult, { mode: "timetab
   return msg;
 }
 
-function buildTimetableKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text("🎲 Regenerate", "rec:reroll")
+function buildTimetableKeyboard(result: Extract<RecommendResult, { mode: "timetable" }>): InlineKeyboard {
+  const kb = new InlineKeyboard();
+
+  // Find all orderable meals across the planned days
+  const orderableMeals: { day: string; slot: string; meal: MealSuggestion; key: string }[] = [];
+  result.days.forEach((dayPlan) => {
+    dayPlan.meals.forEach((mealPlan) => {
+      if (mealPlan.pick && mealPlan.pick.orderable) {
+        orderableMeals.push({
+          day: DAY_LABELS[dayPlan.day] || dayPlan.day,
+          slot: mealPlan.slot.charAt(0).toUpperCase() + mealPlan.slot.slice(1),
+          meal: mealPlan.pick,
+          key: mealPlan.pick.key,
+        });
+      }
+    });
+  });
+
+  // If there are orderable meals in the timetable, offer instant buttons to order them
+  if (orderableMeals.length > 0) {
+    if (orderableMeals.length > 1) {
+      kb.text("⚡ Add All Orderable Meals to Tray", "rec:order_all_tt").row();
+    }
+    orderableMeals.forEach((item, idx) => {
+      kb.text(
+        `🛒 Order ${item.day} ${item.slot}: ${item.meal.name.slice(0, 18)}`,
+        `rec:ord_tt:${idx}`
+      ).row();
+    });
+  }
+
+  kb.text("🎲 Regenerate", "rec:reroll")
     .text("🔄 Start Over", "rec:restart");
+
+  return kb;
 }
+
 
 // ─── Core function that calls recommend() and shows results ───────────────────
 
@@ -374,15 +406,16 @@ async function runRecommend(ctx: any, recSess: RecSession) {
         await ctx.reply(buildTimetableMessage(single, recSess.recBudget), { parse_mode: "HTML" });
       }
       await ctx.reply("That's your full timetable! 🎉", {
-        reply_markup: buildTimetableKeyboard(),
+        reply_markup: buildTimetableKeyboard(result),
         parse_mode: "HTML",
       });
     } else {
       await ctx.reply(msg, {
         parse_mode: "HTML",
-        reply_markup: buildTimetableKeyboard(),
+        reply_markup: buildTimetableKeyboard(result),
       });
     }
+
   }
 
   // Show note confirmation if note was understood
@@ -558,7 +591,7 @@ export function registerRecommenderFlow(
     await startRecommenderFlow(ctx);
   });
 
-  // ── Order a Prime meal from results ───────────────────────────────────────
+  // ── Order a Prime meal from eat-now results ───────────────────────────────
   bot.callbackQuery(/^rec:order:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const rs = getRecSession(ctx.from.id);
@@ -576,6 +609,67 @@ export function registerRecommenderFlow(
     }
     await onOrderPrime(ctx, suggestion);
   });
+
+  // ── Order a single Prime meal from timetable results ───────────────────────
+  bot.callbackQuery(/^rec:ord_tt:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const rs = getRecSession(ctx.from.id);
+    const targetIdx = parseInt(ctx.match[1]);
+    if (!rs.recLastResult || rs.recLastResult.mode !== "timetable") {
+      await ctx.reply("Timetable expired. Please plan again.", {
+        reply_markup: new InlineKeyboard().text("🔄 Start Over", "rec:restart"),
+      });
+      return;
+    }
+
+    const orderableMeals: MealSuggestion[] = [];
+    rs.recLastResult.days.forEach((dayPlan) => {
+      dayPlan.meals.forEach((mealPlan) => {
+        if (mealPlan.pick && mealPlan.pick.orderable) {
+          orderableMeals.push(mealPlan.pick);
+        }
+      });
+    });
+
+    const chosen = orderableMeals[targetIdx];
+    if (!chosen) {
+      await ctx.answerCallbackQuery({ text: "Meal option not found." });
+      return;
+    }
+
+    await onOrderPrime(ctx, chosen);
+  });
+
+  // ── Add ALL orderable Prime meals in timetable to tray ─────────────────────
+  bot.callbackQuery("rec:order_all_tt", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const rs = getRecSession(ctx.from.id);
+    if (!rs.recLastResult || rs.recLastResult.mode !== "timetable") {
+      await ctx.reply("Timetable expired. Please plan again.", {
+        reply_markup: new InlineKeyboard().text("🔄 Start Over", "rec:restart"),
+      });
+      return;
+    }
+
+    const orderableMeals: MealSuggestion[] = [];
+    rs.recLastResult.days.forEach((dayPlan) => {
+      dayPlan.meals.forEach((mealPlan) => {
+        if (mealPlan.pick && mealPlan.pick.orderable) {
+          orderableMeals.push(mealPlan.pick);
+        }
+      });
+    });
+
+    if (orderableMeals.length === 0) {
+      await ctx.reply("No orderable vendor meals found in this timetable.");
+      return;
+    }
+
+    for (const meal of orderableMeals) {
+      await onOrderPrime(ctx, meal);
+    }
+  });
+
 
   // ── Text handler (for custom budget and note) ─────────────────────────────
   // This is a named function so the caller can register it in the message handler chain.
