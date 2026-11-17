@@ -18,13 +18,22 @@ export interface OrderTarget {
   room?: string;
 }
 
+export interface BankPaymentDetails {
+  accountNumber: string;
+  bankName: string;
+  accountName: string;
+  amount: number;
+}
+
 export interface AgentOrderResult {
   success: boolean;
-  message: string
+  message: string;
   paystackUrl?: string;
+  bankPaymentDetails?: BankPaymentDetails;
   rawResponse?: string;
   stepsCompleted: string[];
 }
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -366,7 +375,20 @@ export class DineOrderingAgent {
         break;
       }
 
-      // Final check
+      // Final check: Bank Transfer details in message text
+      const bankDetails = this.extractBankDetails(msg);
+      if (bankDetails) {
+        stepsCompleted.push(`✅ Acquired Bank Payment Details: ${bankDetails.accountNumber} (${bankDetails.bankName})`);
+        return {
+          success: true,
+          message: "Order placed! Bank payment details received.",
+          bankPaymentDetails: bankDetails,
+          stepsCompleted,
+          rawResponse: msg?.text,
+        };
+      }
+
+      // Final check: Paystack / Korapay checkout URL
       const finalUrl = this.extractPaystackUrl(msg);
       if (finalUrl) {
         stepsCompleted.push("✅ Acquired Paystack checkout URL");
@@ -378,6 +400,7 @@ export class DineOrderingAgent {
           rawResponse: msg?.text,
         };
       }
+
 
       return {
         success: false,
@@ -425,4 +448,44 @@ export class DineOrderingAgent {
 
     return undefined;
   }
+
+  /**
+   * Extract bank account number, bank name, account name, and amount from Prime bot's message
+   */
+  public extractBankDetails(message: any): BankPaymentDetails | undefined {
+    if (!message) return undefined;
+    const text = message.text || "";
+
+    // Check if message asks to send money to a bank account
+    // Example:
+    // Send ₦2,250 to:
+    // Account number: 9479959026
+    // Bank: Flutterwave MFB
+    // Name: Prime That
+    const accMatch = text.match(/(?:Account\s*number|Account|Acc\s*no\.?):\s*([0-9]{10})/i);
+    const bankMatch = text.match(/(?:Bank(?:\s*name)?):\s*([^\n\r]+)/i);
+    const nameMatch = text.match(/(?:Name|Account\s*name):\s*([^\n\r]+)/i);
+    const amountMatch = text.match(/(?:Send|Pay)?\s*₦\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+
+    if (accMatch && bankMatch) {
+      const accountNumber = accMatch[1].trim();
+      const bankName = bankMatch[1].trim();
+      const accountName = nameMatch ? nameMatch[1].trim() : "Prime That";
+      let amount = 0;
+
+      if (amountMatch) {
+        amount = parseFloat(amountMatch[1].replace(/,/g, ""));
+      }
+
+      return {
+        accountNumber,
+        bankName,
+        accountName,
+        amount,
+      };
+    }
+
+    return undefined;
+  }
 }
+

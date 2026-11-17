@@ -22,6 +22,7 @@ import {
 } from "./engine/recommender.js";
 import {
   DineOrderingAgent,
+  KoraPaymentService,
   recommend,
   planWeek,
   FindAgent,
@@ -31,6 +32,7 @@ import {
   type MealSuggestion,
   type RecommendRequest,
 } from "@dine/ai";
+
 import {
   registerRecommenderFlow,
   defaultRecSession,
@@ -208,6 +210,8 @@ bot.callbackQuery("action_clear_tray", async (ctx) => {
 });
 
 const orderingAgent = new DineOrderingAgent();
+const koraService = new KoraPaymentService();
+
 
 // Known halls at Covenant University for quick-pick keyboard
 const KNOWN_HALLS = [
@@ -330,6 +334,7 @@ async function runOrderPlacement(ctx: any, userId: number) {
 
   const results: string[] = [];
   const paystackLinks: string[] = [];
+  const paymentConfirmations: string[] = [];
 
   for (let i = 0; i < tray.length; i++) {
     const item = tray[i];
@@ -345,7 +350,54 @@ async function runOrderPlacement(ctx: any, userId: number) {
 
       if (result.success) {
         results.push(`✅ ${label}`);
-        if (result.paystackUrl) {
+
+        // Automated Bank Transfer Payment via Kora API
+        if (result.bankPaymentDetails) {
+          const bankDetails = result.bankPaymentDetails;
+          const transferAmount = bankDetails.amount || item.price;
+
+          if (koraService.isConfigured()) {
+            await ctx.reply(
+              `💳 *Prime checkout detected!*\n` +
+                `Recipient: *${bankDetails.accountName}*\n` +
+                `Bank: *${bankDetails.bankName}* (\`${bankDetails.accountNumber}\`)\n` +
+                `Amount: *₦${transferAmount.toLocaleString()}*\n\n` +
+                `_Executing automated interbank transfer via Kora API..._`,
+              { parse_mode: "Markdown" }
+            );
+
+            const bankCode = (await koraService.getBankCode(bankDetails.bankName)) || "090567";
+            const disburseResult = await koraService.disburse({
+              bankCode,
+              accountNumber: bankDetails.accountNumber,
+              amount: transferAmount,
+              customerName: `${ctx.from.first_name || "Student"} (via Dine)`,
+              narration: `Dine pay for ${item.itemName}`,
+            });
+
+            if (disburseResult.success) {
+              paymentConfirmations.push(
+                `💸 *Paid ₦${transferAmount.toLocaleString()} to ${bankDetails.accountName}*\n` +
+                  `   • Bank: ${bankDetails.bankName}\n` +
+                  `   • Account: \`${bankDetails.accountNumber}\`\n` +
+                  `   • Ref: \`${disburseResult.reference}\` (Status: ${disburseResult.status})`
+              );
+            } else {
+              paymentConfirmations.push(
+                `⚠️ *Transfer to Prime failed:* ${disburseResult.message}\n` +
+                  `Manual transfer target: \`${bankDetails.accountNumber}\` (${bankDetails.bankName})`
+              );
+            }
+          } else {
+            paymentConfirmations.push(
+              `🏦 *Send ₦${transferAmount.toLocaleString()} to Prime:*\n` +
+                `• Account: \`${bankDetails.accountNumber}\`\n` +
+                `• Bank: *${bankDetails.bankName}*\n` +
+                `• Name: *${bankDetails.accountName}*\n` +
+                `_(Set KORA_SECRET_KEY in .env to auto-pay)_`
+            );
+          }
+        } else if (result.paystackUrl) {
           paystackLinks.push(`💳 [Pay for ${item.itemName}](${result.paystackUrl})`);
         }
       } else {
@@ -364,12 +416,15 @@ async function runOrderPlacement(ctx: any, userId: number) {
   summary += results.join("\n") + "\n\n";
   summary += `💵 *Total: ₦${total.toLocaleString()}*\n\n`;
 
+  if (paymentConfirmations.length > 0) {
+    summary += `*Payment Execution:*\n${paymentConfirmations.join("\n\n")}\n\n`;
+  }
+
   if (paystackLinks.length > 0) {
     summary += `*Payment Links:*\n${paystackLinks.join("\n")}\n\n`;
     summary += `_Tap a link above to complete payment._`;
-  } else {
-    summary += `_Check server logs — Prime's bot may have a different checkout flow._`;
   }
+
 
   try {
     await ctx.api.editMessageText(ctx.chat!.id, processingMsg.message_id, summary, {
