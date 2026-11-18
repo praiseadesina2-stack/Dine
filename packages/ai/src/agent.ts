@@ -41,6 +41,52 @@ function log(msg: string) {
   console.log(`[DineAgent] ${msg}`);
 }
 
+function normalizeForMatch(text: string): string {
+  return (text || "")
+    .toLowerCase()
+    .replace(/[₦n]\s*[\d,]+(?:\.\d{2})?/g, "") // remove prices like ₦2,500
+    .replace(/[\(\)\[\]\{\}\+\-\*\/\\,.:;!?_~"']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getTokens(text: string): string[] {
+  return normalizeForMatch(text)
+    .split(" ")
+    .filter((w) => w.length > 1 && !["the", "and", "with", "for", "pack", "menu", "select", "order"].includes(w));
+}
+
+function calculateSimilarity(candidate: string, target: string): number {
+  const cNorm = normalizeForMatch(candidate);
+  const tNorm = normalizeForMatch(target);
+
+  if (!cNorm || !tNorm) return 0;
+  if (cNorm === tNorm) return 1.0;
+  if (cNorm.includes(tNorm) || tNorm.includes(cNorm)) return 0.9;
+
+  const cTokens = getTokens(candidate);
+  const tTokens = getTokens(target);
+  if (cTokens.length === 0 || tTokens.length === 0) return 0;
+
+  // Strict number checking: if both target and button mention numbers, they MUST match
+  const cNums: string[] = candidate.match(/\b\d+\b/g) || [];
+  const tNums: string[] = target.match(/\b\d+\b/g) || [];
+  if (cNums.length > 0 && tNums.length > 0) {
+    const common = cNums.filter((n) => tNums.indexOf(n) !== -1);
+    if (common.length === 0) return 0; // Numbers mismatch! e.g. 1 sausage vs 2 sausages
+  }
+
+  // Token overlap ratio
+  let match = 0;
+  for (const t of tTokens) {
+    if (cTokens.some((c) => c === t || c.includes(t) || t.includes(c))) {
+      match++;
+    }
+  }
+
+  return match / tTokens.length;
+}
+
 /** Dump all buttons on a message for debugging */
 function dumpButtons(msg: any): string {
   if (!msg) return "(no message)";
@@ -142,10 +188,15 @@ export class DineOrderingAgent {
         const btn = buttons[b];
         const btnText = (btn.text || "").trim().toLowerCase();
 
-        if (btnText.includes(search) || search.includes(btnText)) {
+        // Exact match or clean substring (require at least 4 chars to prevent single letter/digit false matches)
+        const isMatch =
+          btnText === search ||
+          btnText.includes(search) ||
+          (btnText.length >= 4 && search.includes(btnText));
+
+        if (isMatch) {
           log(`  → Clicking [r${r}c${b}] "${btn.text}"`);
           try {
-            // gramjs click signature: message.click(row, column) — note order
             await message.click({ i: r, j: b });
             return btn.text;
           } catch (e: any) {
@@ -155,6 +206,42 @@ export class DineOrderingAgent {
       }
     }
     return null;
+  }
+
+  /**
+   * Find the button on a message that has the highest similarity score with targetText.
+   * Prevents matching generic buttons like 'back', 'next', 'cancel'.
+   */
+  private findBestButton(
+    message: any,
+    targetText: string,
+    minScore: number = 0.45
+  ): { row: number; col: number; text: string; score: number } | null {
+    if (!message || !message.replyMarkup?.rows) return null;
+
+    let best: { row: number; col: number; text: string; score: number } | null = null;
+    const rows = message.replyMarkup.rows;
+
+    for (let r = 0; r < rows.length; r++) {
+      const buttons = rows[r].buttons || [];
+      for (let b = 0; b < buttons.length; b++) {
+        const btn = buttons[b];
+        const btnText = (btn.text || "").trim();
+        if (!btnText) continue;
+
+        const lower = btnText.toLowerCase();
+        if (["back", "home", "main menu", "cancel", "help", "next", "prev", "previous"].includes(lower)) {
+          continue;
+        }
+
+        const score = calculateSimilarity(btnText, targetText);
+        if (score >= minScore && (!best || score > best.score)) {
+          best = { row: r, col: b, text: btnText, score };
+        }
+      }
+    }
+
+    return best;
   }
 
   /**
@@ -193,7 +280,6 @@ export class DineOrderingAgent {
       stepsCompleted.push(`Connected to @${botUsername}`);
 
       // ── STEP 1: Send /start, grab baseline message id ──────────────────────
-      // Get the current latest message id before we do anything
       const preStartMsgs = await client.getMessages(botEntity, { limit: 1 });
       const baselineId = preStartMsgs[0]?.id ?? 0;
       log(`Baseline message id: ${baselineId}`);
@@ -227,19 +313,22 @@ export class DineOrderingAgent {
       // ── STEP 3: Find and click vendor (paginate up to 6 pages) ─────────────
       let vendorFound = false;
       for (let page = 1; page <= 6; page++) {
-        log(`Page ${page}: ${dumpButtons(msg)}`);
+        log(`Catalog page ${page}: ${dumpButtons(msg)}`);
 
-        const clicked = await this.clickButtonByText(msg, target.vendorName);
-        if (clicked) {
+        // Use smart similarity to find the best matching vendor button
+        const bestVendor = this.findBestButton(msg, target.vendorName, 0.45);
+        if (bestVendor) {
+          log(`  → Selected vendor "${bestVendor.text}" (score: ${bestVendor.score.toFixed(2)})`);
+          await msg.click({ i: bestVendor.row, j: bestVendor.col });
           vendorFound = true;
-          stepsCompleted.push(`Selected vendor "${target.vendorName}" on page ${page}`);
+          stepsCompleted.push(`Selected vendor "${bestVendor.text}" on page ${page}`);
           const prevId = msg.id;
           msg = await waitForNewMessage(client, botEntity, prevId, 8000);
           log(`After vendor click: ${dumpButtons(msg)}`);
           break;
         }
 
-        // Try to go to next page
+        // Try to go to next catalog page
         const nextClicked = await this.clickFirstMatch(msg, ["next", "next page", "▶", "»", "→"]);
         if (nextClicked) {
           stepsCompleted.push(`Navigated to catalog page ${page + 1}`);
@@ -260,28 +349,49 @@ export class DineOrderingAgent {
         };
       }
 
-      // ── STEP 4: Click meal item ─────────────────────────────────────────────
-      const itemClicked = await this.clickFirstMatch(msg, [
-        target.itemName,
-        "order now",
-        "add to cart",
-        "select",
-      ]);
+      // ── STEP 4: Find and click EXACT meal item (with pagination!) ───────────
+      let itemClicked: string | null = null;
+      for (let itemPage = 1; itemPage <= 4; itemPage++) {
+        log(`Vendor menu page ${itemPage}: ${dumpButtons(msg)}`);
 
-      if (itemClicked) {
-        stepsCompleted.push(`Selected item "${itemClicked}"`);
-        const prevId = msg.id;
-        msg = await waitForNewMessage(client, botEntity, prevId, 8000);
-        log(`After item click: ${dumpButtons(msg)}`);
-      } else {
-        log(`  ⚠ Item "${target.itemName}" not found — dumping vendor page: ${dumpButtons(msg)}`);
-        stepsCompleted.push(`⚠ Item not found, proceeding with current state`);
+        // Check if message has an exact/high similarity match for the requested item
+        const bestItem = this.findBestButton(msg, target.itemName, 0.45);
+        if (bestItem) {
+          log(`  → Selected item "${bestItem.text}" (score: ${bestItem.score.toFixed(2)})`);
+          await msg.click({ i: bestItem.row, j: bestItem.col });
+          itemClicked = bestItem.text;
+          stepsCompleted.push(`Selected item "${bestItem.text}"`);
+          const prevId = msg.id;
+          msg = await waitForNewMessage(client, botEntity, prevId, 8000);
+          log(`After item click: ${dumpButtons(msg)}`);
+          break;
+        }
+
+        // Check if there is a next page for this vendor's menu
+        const nextItemPage = await this.clickFirstMatch(msg, ["next", "next page", "▶", "»", "→"]);
+        if (nextItemPage) {
+          stepsCompleted.push(`Navigated to vendor menu page ${itemPage + 1}`);
+          const prevId = msg.id;
+          msg = await waitForNewMessage(client, botEntity, prevId, 6000);
+        } else {
+          break;
+        }
       }
 
-      // ── STEP 5: Handle intermediate steps (quantity, delivery, confirm) ─────
-      // Prime's bot likely asks for hall/room or quantity before showing payment.
-      // We loop up to 5 times checking for each known prompt type.
+      // CRITICAL SAFEGUARD: Never order the wrong item if the requested meal is unavailable!
+      if (!itemClicked) {
+        log(`  ❌ Item "${target.itemName}" not found on menu.`);
+        return {
+          success: false,
+          message: `Item "${target.itemName}" is currently not available on "${target.vendorName}"'s menu.`,
+          stepsCompleted,
+          rawResponse: msg?.text,
+        };
+      }
+
+      // ── STEP 5: Handle intermediate steps (quantity, delivery, checkout) ────
       for (let step = 0; step < 8; step++) {
+        // Immediate check: Paystack / Korapay checkout URL
         const paystackUrl = this.extractPaystackUrl(msg);
         if (paystackUrl) {
           stepsCompleted.push("✅ Acquired Paystack checkout URL");
@@ -294,10 +404,23 @@ export class DineOrderingAgent {
           };
         }
 
+        // Immediate check: Bank Transfer details in message text
+        const bankDetails = this.extractBankDetails(msg);
+        if (bankDetails) {
+          stepsCompleted.push(`✅ Acquired Bank Payment Details: ${bankDetails.accountNumber} (${bankDetails.bankName})`);
+          return {
+            success: true,
+            message: "Order placed! Bank payment details received.",
+            bankPaymentDetails: bankDetails,
+            stepsCompleted,
+            rawResponse: msg?.text,
+          };
+        }
+
         const msgText = (msg?.text || "").toLowerCase();
         log(`Intermediate step ${step + 1}: "${msgText.slice(0, 100)}"`);
 
-        // Handle quantity selection
+        // Handle quantity selection (pick 1)
         if (msgText.includes("quantity") || msgText.includes("how many")) {
           const qty = await this.clickFirstMatch(msg, ["1", "one"]);
           if (qty) {
@@ -318,17 +441,16 @@ export class DineOrderingAgent {
         ) {
           const hall = target.hall || process.env.DEFAULT_HALL || "";
           if (hall) {
-            const hallClicked = await this.clickButtonByText(msg, hall);
-            if (hallClicked) {
-              stepsCompleted.push(`Selected hall: "${hallClicked}"`);
+            const bestHall = this.findBestButton(msg, hall, 0.4);
+            if (bestHall) {
+              await msg.click({ i: bestHall.row, j: bestHall.col });
+              stepsCompleted.push(`Selected hall: "${bestHall.text}"`);
               const prevId = msg.id;
               msg = await waitForNewMessage(client, botEntity, prevId, 6000);
               continue;
             }
           }
-          // If no hall configured, log and break
-          log(`  ⚠ Hall/location prompt found but no hall configured. Buttons: ${dumpButtons(msg)}`);
-          stepsCompleted.push(`⚠ Hall/location prompt needs input — set DEFAULT_HALL in .env`);
+          log(`  ⚠ Hall/location prompt found but could not match hall "${target.hall}". Buttons: ${dumpButtons(msg)}`);
           break;
         }
 
@@ -342,11 +464,11 @@ export class DineOrderingAgent {
             msg = await waitForNewMessage(client, botEntity, prevId, 6000);
             continue;
           }
-          log(`  ⚠ Room prompt found but no room configured. Set DEFAULT_ROOM in .env`);
+          log(`  ⚠ Room prompt found but no room configured.`);
           break;
         }
 
-        // Handle any "confirm", "proceed", "pay" button
+        // Handle confirm/proceed button (only after item is selected!)
         const confirmClicked = await this.clickFirstMatch(msg, [
           "confirm",
           "proceed",
@@ -364,7 +486,7 @@ export class DineOrderingAgent {
           continue;
         }
 
-        // Nothing matched — wait a moment and re-check for Paystack URL in same message
+        // Wait and check if message was updated
         log(`  ⚠ No matching action for step ${step + 1}, waiting...`);
         await sleep(2000);
         const refreshed = await client.getMessages(botEntity, { limit: 1 });
@@ -375,20 +497,19 @@ export class DineOrderingAgent {
         break;
       }
 
-      // Final check: Bank Transfer details in message text
-      const bankDetails = this.extractBankDetails(msg);
-      if (bankDetails) {
-        stepsCompleted.push(`✅ Acquired Bank Payment Details: ${bankDetails.accountNumber} (${bankDetails.bankName})`);
+      // Final payment check
+      const finalBank = this.extractBankDetails(msg);
+      if (finalBank) {
+        stepsCompleted.push(`✅ Acquired Bank Payment Details: ${finalBank.accountNumber} (${finalBank.bankName})`);
         return {
           success: true,
           message: "Order placed! Bank payment details received.",
-          bankPaymentDetails: bankDetails,
+          bankPaymentDetails: finalBank,
           stepsCompleted,
           rawResponse: msg?.text,
         };
       }
 
-      // Final check: Paystack / Korapay checkout URL
       const finalUrl = this.extractPaystackUrl(msg);
       if (finalUrl) {
         stepsCompleted.push("✅ Acquired Paystack checkout URL");
@@ -401,10 +522,9 @@ export class DineOrderingAgent {
         };
       }
 
-
       return {
         success: false,
-        message: "Order flow reached an unrecognised state before checkout. Check server logs for button dumps.",
+        message: "Order reached an unrecognised state before payment. Please check with vendor.",
         stepsCompleted,
         rawResponse: msg?.text,
       };
