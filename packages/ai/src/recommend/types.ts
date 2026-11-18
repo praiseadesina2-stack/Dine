@@ -3,7 +3,6 @@
  * The bot collects these from button taps; only `note` is free text.
  * Use the exported value lists as the button callback codes so both sides agree.
  */
-import type { Allergen } from "./knowledge.js";
 import type { Allergen, Prep } from "./knowledge.js";
 
 /** Cooking methods a student can ask to avoid ("no fried food"). */
@@ -68,9 +67,16 @@ export interface NoteConstraints {
 }
 
 export const EMPTY_NOTE: NoteConstraints = {
-  excludeAllergens: [], excludeComponents: [], excludeVendors: [], preferComponents: [], preferVendors: [],
-  excludeAllergens: [], excludeComponents: [], excludeVendors: [], excludePrep: [], preferComponents: [], preferVendors: [],
-  vegetarian: false, noPork: false, unhandled: [], parsedBy: "none",
+  excludeAllergens: [],
+  excludeComponents: [],
+  excludeVendors: [],
+  excludePrep: [],
+  preferComponents: [],
+  preferVendors: [],
+  vegetarian: false,
+  noPork: false,
+  unhandled: [],
+  parsedBy: "none",
 };
 
 export interface MealSuggestion {

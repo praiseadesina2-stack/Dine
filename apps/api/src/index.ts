@@ -23,6 +23,7 @@ import {
 import {
   DineOrderingAgent,
   KoraPaymentService,
+  WalletService,
   recommend,
   planWeek,
   FindAgent,
@@ -49,7 +50,7 @@ const bot = new Bot(token);
 
 // User Session State
 interface UserSession extends RecSession {
-  step: "idle" | "awaiting_custom_budget" | "awaiting_hall" | "awaiting_room";
+  step: "idle" | "awaiting_custom_budget" | "awaiting_hall" | "awaiting_room" | "awaiting_fund_amount";
   budget: BudgetBracket | number;
   budgetLabel: string;
   craving?: CravingType;
@@ -211,6 +212,10 @@ bot.callbackQuery("action_clear_tray", async (ctx) => {
 
 const orderingAgent = new DineOrderingAgent();
 const koraService = new KoraPaymentService();
+const walletService = new WalletService();
+
+// Track pending fund references so we can verify payment
+const pendingFunds = new Map<string, { telegramUserId: string; amount: number }>();
 
 
 // Known halls at Covenant University for quick-pick keyboard
@@ -313,22 +318,64 @@ async function runOrderPlacement(ctx: any, userId: number) {
   const session = getSession(userId);
   const total = tray.reduce((sum, item) => sum + item.price, 0);
 
-  if (!orderingAgent.isConfigured()) {
+  // 1. Check Dine Wallet Balance first
+  const userBalance = await walletService.getBalance(String(userId));
+  if (userBalance < total) {
+    const deficit = total - userBalance;
+    const kb = new InlineKeyboard()
+      .text(`💳 Top-up ₦${deficit.toLocaleString()}`, `fund_amount:${deficit}`)
+      .row()
+      .text("💰 Fund Custom Amount", "wallet_fund")
+      .text("🛒 View Tray", "action_view_tray");
+
     await ctx.reply(
-      `✅ *Order Recorded!*\n\n` +
+      `⚠️ *Insufficient Dine Wallet Balance*\n\n` +
+        `📦 Order Total: *₦${total.toLocaleString()}*\n` +
+        `💰 Current Balance: *₦${userBalance.toLocaleString()}*\n` +
+        `📉 Short by: *₦${deficit.toLocaleString()}*\n\n` +
+        `_Top up your wallet with test cards to authorize Dine to pay Prime for you!_`,
+      { reply_markup: kb, parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  if (!orderingAgent.isConfigured()) {
+    // If agent is not configured, still simulate the wallet debit so testing is authentic
+    await walletService.debit({
+      telegramUserId: String(userId),
+      amountNaira: total,
+      reference: `order_${Date.now()}_${userId}`,
+      description: `Meal order (${tray.length} items)`,
+    });
+    const newBal = await walletService.getBalance(String(userId));
+
+    userTrays.set(userId, []);
+
+    await ctx.reply(
+      `✅ *Order Recorded & Wallet Debited!*\n\n` +
         `Items: *${tray.length}* · Total: *₦${total.toLocaleString()}*\n` +
-        `Hall: *${session.hall}* · Room: *${session.room}*\n\n` +
-        `⚙️ _Autonomous ordering is not yet activated on this deployment._`,
+        `Hall: *${session.hall}* · Room: *${session.room}*\n` +
+        `💰 Remaining Wallet Balance: *₦${newBal.toLocaleString()}*\n\n` +
+        `⚙️ _Autonomous Telegram ordering agent is in standby mode._`,
       { reply_markup: mainKeyboard, parse_mode: "Markdown" }
     );
     return;
   }
 
+  // Debit student's Dine wallet
+  await walletService.debit({
+    telegramUserId: String(userId),
+    amountNaira: total,
+    reference: `order_${Date.now()}_${userId}`,
+    description: `Meal order (${tray.map((t) => t.itemName).join(", ")})`,
+  });
+  const remainingBalance = await walletService.getBalance(String(userId));
+
   const processingMsg = await ctx.reply(
-    `⏳ *Placing your order on Prime...*\n\n` +
-      `📦 *${tray.length} item(s)* · ₦${total.toLocaleString()}\n` +
+    `⏳ *Wallet Debited (₦${total.toLocaleString()}) — Placing order on Prime...*\n\n` +
+      `📦 *${tray.length} item(s)* · Remaining Wallet: ₦${remainingBalance.toLocaleString()}\n` +
       `📍 *${session.hall}*, Room *${session.room}*\n\n` +
-      `_This usually takes 10–20 seconds. Hang tight!_`,
+      `_Autonomous agent routing to vendor & initiating transfer..._`,
     { parse_mode: "Markdown" }
   );
 
@@ -366,7 +413,7 @@ async function runOrderPlacement(ctx: any, userId: number) {
               { parse_mode: "Markdown" }
             );
 
-            const bankCode = (await koraService.getBankCode(bankDetails.bankName)) || "090567";
+            const bankCode = (await koraService.getBankCode(bankDetails.bankName)) || "110002";
             const disburseResult = await koraService.disburse({
               bankCode,
               accountNumber: bankDetails.accountNumber,
@@ -414,7 +461,8 @@ async function runOrderPlacement(ctx: any, userId: number) {
   let summary = `🎉 *Order Summary*\n`;
   summary += `📍 *${session.hall}*, Room *${session.room}*\n\n`;
   summary += results.join("\n") + "\n\n";
-  summary += `💵 *Total: ₦${total.toLocaleString()}*\n\n`;
+  summary += `💵 *Total: ₦${total.toLocaleString()}*\n`;
+  summary += `💰 *Remaining Wallet Balance: ₦${remainingBalance.toLocaleString()}*\n\n`;
 
   if (paymentConfirmations.length > 0) {
     summary += `*Payment Execution:*\n${paymentConfirmations.join("\n\n")}\n\n`;
@@ -660,6 +708,7 @@ bot.command("find", async (ctx) => {
 
 // /plan command - Uses planWeek() to generate a full 7-day timetable
 bot.command("plan", async (ctx) => {
+  if (!ctx.from) return;
   const session = getSession(ctx.from.id);
   const budget = typeof session.budget === "number" ? session.budget : 2000;
 
@@ -772,17 +821,223 @@ bot.command("help", async (ctx) => {
 });
 
 bot.hears("💰 Wallet", async (ctx) => {
-  await ctx.reply(
-    "💰 *Dine Wallet*\n\n" +
-      "• Available Balance: *₦0.00*\n" +
-      "• Status: *Active (Demo Mode)*\n\n" +
-      "Funding and direct campus cafeteria checkout will be enabled in the payment milestone.",
-    {
-      reply_markup: mainKeyboard,
-      parse_mode: "Markdown"
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  const balance = await walletService.getBalance(String(userId));
+  const txns = await walletService.getTransactions(String(userId), 5);
+
+  let txnList = "";
+  if (txns.length > 0) {
+    txnList = "\n\n📋 *Recent Transactions:*\n";
+    for (const tx of txns) {
+      const sign = tx.type === "credit" ? "+" : "-";
+      const icon = tx.type === "credit" ? "🟢" : "🔴";
+      txnList += `${icon} ${sign}₦${(tx.amount / 100).toLocaleString()} — ${tx.description}\n`;
     }
+  }
+
+  const kb = new InlineKeyboard()
+    .text("💳 Fund Wallet", "wallet_fund")
+    .row()
+    .text("📋 All Transactions", "wallet_history");
+
+  await ctx.reply(
+    `💰 *Dine Wallet*\n\n` +
+      `💵 Balance: *₦${balance.toLocaleString()}*\n` +
+      `💱 Currency: *NGN*\n` +
+      `🔒 Status: *Active*` +
+      txnList +
+      `\n\nTap *Fund Wallet* to add money via card.`,
+    { reply_markup: kb, parse_mode: "Markdown" }
   );
 });
+
+bot.command("wallet", async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  const balance = await walletService.getBalance(String(userId));
+
+  const kb = new InlineKeyboard()
+    .text("💳 Fund Wallet", "wallet_fund")
+    .text("📋 History", "wallet_history");
+
+  await ctx.reply(
+    `💰 *Dine Wallet* — ₦${balance.toLocaleString()}\n\n` +
+      `Tap *Fund Wallet* to top up via card.`,
+    { reply_markup: kb, parse_mode: "Markdown" }
+  );
+});
+
+// ── Fund Wallet: Ask for amount ──────────────────────────────────────────────
+bot.callbackQuery("wallet_fund", async (ctx) => {
+  const userId = ctx.from.id;
+  const session = getSession(userId);
+  session.step = "awaiting_fund_amount";
+
+  await ctx.answerCallbackQuery();
+
+  const kb = new InlineKeyboard()
+    .text("₦500", "fund_amount:500")
+    .text("₦1,000", "fund_amount:1000")
+    .text("₦2,000", "fund_amount:2000")
+    .row()
+    .text("₦3,000", "fund_amount:3000")
+    .text("₦5,000", "fund_amount:5000")
+    .text("₦10,000", "fund_amount:10000")
+    .row()
+    .text("✏️ Custom Amount", "fund_amount:custom");
+
+  await ctx.reply(
+    "💳 *Fund Your Wallet*\n\n" +
+      "How much would you like to add?\n" +
+      "_Select an amount or type a custom one:_",
+    { reply_markup: kb, parse_mode: "Markdown" }
+  );
+});
+
+// ── Fund: Quick amount buttons ───────────────────────────────────────────────
+bot.callbackQuery(/^fund_amount:(.+)$/, async (ctx) => {
+  const userId = ctx.from.id;
+  const session = getSession(userId);
+  const picked = ctx.match[1];
+
+  await ctx.answerCallbackQuery();
+
+  if (picked === "custom") {
+    session.step = "awaiting_fund_amount";
+    await ctx.reply(
+      "✏️ *Type the amount you want to fund (in Naira):*\n" +
+        "_e.g. 1500, 2500, 7000_",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  const amount = parseInt(picked, 10);
+  if (isNaN(amount) || amount < 100) {
+    await ctx.reply("⚠️ Minimum funding amount is ₦100.");
+    return;
+  }
+
+  session.step = "idle";
+  await initiateFunding(ctx, userId, amount);
+});
+
+// ── Wallet transaction history ───────────────────────────────────────────────
+bot.callbackQuery("wallet_history", async (ctx) => {
+  const userId = ctx.from.id;
+  await ctx.answerCallbackQuery();
+
+  const txns = await walletService.getTransactions(String(userId), 10);
+
+  if (txns.length === 0) {
+    await ctx.reply(
+      "📋 *Transaction History*\n\nNo transactions yet. Fund your wallet to get started!",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  let msg = "📋 *Transaction History*\n\n";
+  for (const tx of txns) {
+    const sign = tx.type === "credit" ? "+" : "-";
+    const icon = tx.type === "credit" ? "🟢" : "🔴";
+    const date = tx.createdAt.toLocaleDateString("en-NG", { day: "numeric", month: "short" });
+    msg += `${icon} ${sign}₦${(tx.amount / 100).toLocaleString()} — ${tx.description} (${date})\n`;
+  }
+
+  await ctx.reply(msg, { parse_mode: "Markdown" });
+});
+
+// ── Verify payment callback ─────────────────────────────────────────────────
+bot.callbackQuery(/^verify_fund:(.+)$/, async (ctx) => {
+  const reference = ctx.match[1];
+  await ctx.answerCallbackQuery({ text: "Checking payment status..." });
+
+  const pending = pendingFunds.get(reference);
+  if (!pending) {
+    await ctx.reply("⚠️ Could not find this funding request. It may have already been processed.");
+    return;
+  }
+
+  const result = await koraService.verifyCharge(reference);
+
+  if (result.success) {
+    // Credit the wallet
+    const amount = result.amount || pending.amount;
+    await walletService.credit({
+      telegramUserId: String(pending.telegramUserId),
+      amountNaira: amount,
+      reference,
+      koraReference: reference,
+      description: `Wallet top-up via Kora (₦${amount.toLocaleString()})`,
+    });
+
+    pendingFunds.delete(reference);
+    const newBalance = await walletService.getBalance(String(pending.telegramUserId));
+
+    await ctx.reply(
+      `✅ *Payment Confirmed!*\n\n` +
+        `💵 Added: *₦${amount.toLocaleString()}*\n` +
+        `💰 New Balance: *₦${newBalance.toLocaleString()}*\n\n` +
+        `Your wallet is funded! Ready to order? Tap *✨ Decide For Me 🍽️*`,
+      { reply_markup: mainKeyboard, parse_mode: "Markdown" }
+    );
+  } else {
+    await ctx.reply(
+      `⏳ *Payment ${result.status === "pending" ? "Still Processing" : "Not Found"}*\n\n` +
+        `Status: ${result.status}\n` +
+        `If you completed the payment, wait a moment and try again.`,
+      {
+        reply_markup: new InlineKeyboard().text("🔄 Check Again", `verify_fund:${reference}`),
+        parse_mode: "Markdown",
+      }
+    );
+  }
+});
+
+/** Generate a Kora checkout link and send it to the user */
+async function initiateFunding(ctx: any, userId: number, amountNaira: number) {
+  const firstName = ctx.from?.first_name || "Student";
+  const username = ctx.from?.username || "user";
+
+  // Generate a valid customer email for Kora checkout
+  const cleanUser = (username || `user${userId}`).replace(/[^a-zA-Z0-9]/g, "");
+  const email = `${cleanUser}@dine.ng`;
+
+  const result = await koraService.initializeCharge({
+    amount: amountNaira,
+    customerName: firstName,
+    customerEmail: email,
+    narration: `Dine Wallet Top-up — ₦${amountNaira.toLocaleString()}`,
+  });
+
+  if (result.success && result.checkoutUrl) {
+    // Track the pending fund
+    pendingFunds.set(result.reference, { telegramUserId: String(userId), amount: amountNaira });
+
+    const kb = new InlineKeyboard()
+      .url("💳 Pay Now", result.checkoutUrl)
+      .row()
+      .text("✅ I've Paid — Verify", `verify_fund:${result.reference}`);
+
+    await ctx.reply(
+      `💳 *Fund ₦${amountNaira.toLocaleString()} to Wallet*\n\n` +
+        `Tap *Pay Now* to open the secure payment page.\n` +
+        `After payment, tap *I've Paid — Verify* to confirm.\n\n` +
+        `🔑 Ref: \`${result.reference}\`\n\n` +
+        `_🧪 Test cards: 5188 5136 1855 2975 / 09/30 / CVV 123 / PIN 1234 / OTP 123456_`,
+      { reply_markup: kb, parse_mode: "Markdown" }
+    );
+  } else {
+    await ctx.reply(
+      `⚠️ *Could not initialize payment.*\n\n${result.message}\n\n_Please try again or contact support._`,
+      { reply_markup: mainKeyboard, parse_mode: "Markdown" }
+    );
+  }
+}
 
 bot.hears("👤 My Profile", async (ctx) => {
   const user = ctx.from;
@@ -860,6 +1115,19 @@ bot.on("message:text", async (ctx) => {
     );
 
     await runOrderPlacement(ctx, userId);
+    return;
+  }
+
+  // ── Wallet: awaiting custom fund amount ───────────────────────────────────
+  if (session.step === "awaiting_fund_amount") {
+    const cleanNum = text.replace(/[^0-9]/g, "");
+    const amount = parseInt(cleanNum, 10);
+    if (isNaN(amount) || amount < 100) {
+      await ctx.reply("⚠️ Please enter a valid amount (minimum ₦100).");
+      return;
+    }
+    session.step = "idle";
+    await initiateFunding(ctx, userId, amount);
     return;
   }
 

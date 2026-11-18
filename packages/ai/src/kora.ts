@@ -44,11 +44,13 @@ export interface AccountResolveResult {
 
 export class KoraPaymentService {
   private secretKey: string;
+  private publicKey: string;
   private baseUrl: string = "https://api.korapay.com/merchant/api/v1";
   private bankCodeCache: Map<string, string> = new Map();
 
-  constructor(secretKey?: string) {
+  constructor(secretKey?: string, publicKey?: string) {
     this.secretKey = secretKey || process.env.KORA_SECRET_KEY || "";
+    this.publicKey = publicKey || process.env.KORA_PUBLIC_KEY || "";
   }
 
   public isConfigured(): boolean {
@@ -65,7 +67,7 @@ export class KoraPaymentService {
     }
 
     // Default known mappings for popular virtual bank providers
-    if (cleanQuery.includes("flutterwave")) return "090567";
+    if (cleanQuery.includes("flutterwave")) return "110002";
     if (cleanQuery.includes("wema")) return "035";
     if (cleanQuery.includes("titan")) return "102";
     if (cleanQuery.includes("opay") || cleanQuery.includes("paycom")) return "999992";
@@ -76,14 +78,16 @@ export class KoraPaymentService {
     if (cleanQuery.includes("access")) return "044";
 
     try {
+      // /misc/banks requires the PUBLIC key, not secret key
+      const authKey = this.publicKey || this.secretKey;
       const response = await fetch(`${this.baseUrl}/misc/banks?countryCode=NG`, {
         headers: {
-          Authorization: `Bearer ${this.secretKey}`,
+          Authorization: `Bearer ${authKey}`,
         },
       });
 
       if (!response.ok) {
-        return "090567";
+        return "110002";
       }
 
       const body = (await response.json()) as any;
@@ -105,7 +109,7 @@ export class KoraPaymentService {
       console.error("[Kora] Error fetching banks:", e);
     }
 
-    return "090567"; // Fallback to Flutterwave MFB NIBSS code
+    return "110002"; // Fallback to Flutterwave Technology Solutions Limited
   }
 
   /**
@@ -117,11 +121,13 @@ export class KoraPaymentService {
     }
 
     try {
+      // /misc/banks/resolve requires the PUBLIC key
+      const authKey = this.publicKey || this.secretKey;
       const response = await fetch(`${this.baseUrl}/misc/banks/resolve`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${this.secretKey}`,
+          Authorization: `Bearer ${authKey}`,
         },
         body: JSON.stringify({
           bank: bankCode,
@@ -166,6 +172,12 @@ export class KoraPaymentService {
 
     const reference = payload.reference || `dine_payout_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
+    // In Kora Test Sandbox, real accounts (like 9479959026) are rejected as "Invalid account".
+    // Kora's official Sandbox successful payout target is bank '033' (UBA) and account '0000000000'.
+    const isTestMode = this.secretKey.startsWith("sk_test_");
+    const targetBank = isTestMode ? "033" : payload.bankCode;
+    const targetAccount = isTestMode ? "0000000000" : payload.accountNumber;
+
     const reqBody = {
       reference,
       destination: {
@@ -174,18 +186,18 @@ export class KoraPaymentService {
         currency: payload.currency || "NGN",
         narration: payload.narration || "Dine Automated Meal Payment",
         bank_account: {
-          bank: payload.bankCode,
-          account_number: payload.accountNumber,
+          bank: targetBank,
+          account: targetAccount,
         },
         customer: {
-          name: payload.customerName || "Dine Student",
-          email: payload.customerEmail || "customer@dine.app",
+          name: payload.customerName || "Prime That",
+          email: payload.customerEmail || "vendor@prime.ng",
         },
       },
     };
 
     try {
-      console.log(`[Kora] Initiating payout of ₦${payload.amount} to ${payload.accountNumber} (Bank: ${payload.bankCode}) ref: ${reference}`);
+      console.log(`[Kora] Initiating payout of ₦${payload.amount} to ${targetAccount} (Bank: ${targetBank}, TestMode: ${isTestMode}) ref: ${reference}`);
 
       const response = await fetch(`${this.baseUrl}/transactions/disburse`, {
         method: "POST",
@@ -240,7 +252,8 @@ export class KoraPaymentService {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/transactions/disburse/${encodeURIComponent(reference)}`, {
+      // Query Kora Transaction Status API
+      const response = await fetch(`${this.baseUrl}/transactions/${encodeURIComponent(reference)}`, {
         headers: {
           Authorization: `Bearer ${this.secretKey}`,
         },
@@ -252,7 +265,7 @@ export class KoraPaymentService {
           success: data.data.status === "success",
           status: data.data.status,
           reference: data.data.reference || reference,
-          message: data.message || `Payout is ${data.data.status}`,
+          message: data.data.message || `Payout is ${data.data.status}`,
           raw: data,
         };
       }
@@ -270,6 +283,143 @@ export class KoraPaymentService {
         status: "error",
         reference,
         message: e?.message || "Network error checking payout status",
+      };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CHARGE / PAY-IN — Fund wallet via Kora Checkout
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Initialize a Kora checkout charge to collect payment.
+   * Returns a checkout_url that the user opens to pay (card, bank transfer, etc).
+   */
+  public async initializeCharge(opts: {
+    amount: number; // in Naira (not kobo)
+    customerName: string;
+    customerEmail: string;
+    reference?: string;
+    redirectUrl?: string;
+    notificationUrl?: string;
+    narration?: string;
+  }): Promise<{ success: boolean; checkoutUrl?: string; reference: string; message: string; raw?: any }> {
+    if (!this.isConfigured()) {
+      return { success: false, reference: "", message: "KORA_SECRET_KEY not set" };
+    }
+
+    const reference = opts.reference || `dine_fund_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    const body: Record<string, any> = {
+      reference,
+      amount: opts.amount,
+      currency: "NGN",
+      customer: {
+        name: opts.customerName,
+        email: opts.customerEmail,
+      },
+    };
+
+    if (opts.notificationUrl) body.notification_url = opts.notificationUrl;
+    if (opts.redirectUrl) body.redirect_url = opts.redirectUrl;
+
+    try {
+      console.log(`[Kora] Initializing charge of ₦${opts.amount} for ${opts.customerEmail}, ref: ${reference}`);
+
+      const response = await fetch(`${this.baseUrl}/charges/initialize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.secretKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = (await response.json()) as any;
+
+      if (response.ok && data?.status && data?.data?.checkout_url) {
+        return {
+          success: true,
+          checkoutUrl: data.data.checkout_url,
+          reference,
+          message: "Checkout initialized",
+          raw: data,
+        };
+      }
+
+      return {
+        success: false,
+        reference,
+        message: data?.message || "Failed to initialize checkout",
+        raw: data,
+      };
+    } catch (err: any) {
+      console.error("[Kora] Charge init error:", err);
+      return {
+        success: false,
+        reference,
+        message: err?.message || "Network error",
+      };
+    }
+  }
+
+  /**
+   * Verify a charge by reference (check if payment was completed).
+   */
+  public async verifyCharge(reference: string): Promise<{
+    success: boolean;
+    status: string;
+    amount?: number;
+    message: string;
+    raw?: any;
+  }> {
+    if (!this.isConfigured()) {
+      return { success: false, status: "not_configured", message: "KORA_SECRET_KEY not set" };
+    }
+
+    try {
+      // First try unified /transactions/{reference}
+      let response = await fetch(`${this.baseUrl}/transactions/${encodeURIComponent(reference)}`, {
+        headers: {
+          Authorization: `Bearer ${this.secretKey}`,
+        },
+      });
+
+      let data = (await response.json()) as any;
+
+      if (!response.ok || !data?.status) {
+        // Fallback to /charges/{reference}
+        response = await fetch(`${this.baseUrl}/charges/${encodeURIComponent(reference)}`, {
+          headers: {
+            Authorization: `Bearer ${this.secretKey}`,
+          },
+        });
+        data = (await response.json()) as any;
+      }
+
+      if (response.ok && data?.status && data?.data) {
+        const isSuccess = data.data.status === "success";
+        const amt = typeof data.data.amount === "string" ? parseFloat(data.data.amount) : data.data.amount;
+        return {
+          success: isSuccess,
+          status: data.data.status,
+          amount: amt,
+          message: data.message || `Charge is ${data.data.status}`,
+          raw: data,
+        };
+      }
+
+      return {
+        success: false,
+        status: data?.data?.status || "unknown",
+        message: data?.message || "Could not verify charge",
+        raw: data,
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        status: "error",
+        message: e?.message || "Network error verifying charge",
       };
     }
   }

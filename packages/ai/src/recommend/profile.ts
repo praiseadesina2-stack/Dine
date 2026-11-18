@@ -181,7 +181,6 @@ export function profileOf(parts: Part[], minHeat = 0): Profile {
   const p: Profile = {
     proteinG: 0, fibreG: 0, kcal: 0, heat: minHeat, sweet: 0, fried: 0, roasted: 0, boiled: 0, processed: 0,
     allergens: new Set(), meat: false, fish: false, porkPossible: false, highSodium: false,
-    slots: new Set(), components: new Set(), confidence: "high",
     slots: new Set(), components: new Set(), preps: new Set(), confidence: "high",
   };
   let sweetK = 0, friedK = 0, roastedK = 0, boiledK = 0;

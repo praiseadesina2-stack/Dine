@@ -29,7 +29,7 @@ async function main() {
   console.log(`   Bank code resolved: ${bankCode}`);
 
   console.log(`\n🔍 2. Resolving account '${primeAccount.accountNumber}' with bank code '${bankCode}'...`);
-  const resolveRes = await kora.resolveAccount(primeAccount.accountNumber, bankCode || "090567");
+  const resolveRes = await kora.resolveAccount(primeAccount.accountNumber, bankCode || "110002");
 
   if (resolveRes.success) {
     console.log(`   ✅ Account Verified!`);

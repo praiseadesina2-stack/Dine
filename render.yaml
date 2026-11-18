@@ -1,0 +1,7 @@
+services:
+  - type: worker
+    name: dine-bot
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    autoDeploy: true
