@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -132,8 +133,8 @@ const recommender = registerRecommenderFlow(
 
     await ctx.reply(
       `🎉 <b>Added to your Tray!</b>\n\n` +
-        `Added <b>${suggestion.name}</b> (${suggestion.vendorName}) — ₦${suggestion.totalPrice?.toLocaleString() ?? 0}.\n\n` +
-        `Your tray now has <b>${tray.length} item(s)</b>.`,
+      `Added <b>${suggestion.name}</b> (${suggestion.vendorName}) — ₦${suggestion.totalPrice?.toLocaleString() ?? 0}.\n\n` +
+      `Your tray now has <b>${tray.length} item(s)</b>.`,
       { parse_mode: "HTML", reply_markup: kb }
     );
   }
@@ -262,7 +263,7 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
     session.step = "awaiting_hall";
     await ctx.reply(
       "🏠 *Where should we deliver your order?*\n\n" +
-        "Pick your hall below or type it manually:",
+      "Pick your hall below or type it manually:",
       { reply_markup: buildHallKeyboard(), parse_mode: "Markdown" }
     );
     return;
@@ -272,8 +273,8 @@ bot.callbackQuery("action_confirm_order", async (ctx) => {
     session.step = "awaiting_room";
     await ctx.reply(
       `🏠 Hall: *${session.hall}*\n\n` +
-        "🚪 What's your *room number*? (e.g. `D208`)\n\n" +
-        "_Type it below and we'll place your order right after._",
+      "🚪 What's your *room number*? (e.g. `D208`)\n\n" +
+      "_Type it below and we'll place your order right after._",
       { parse_mode: "Markdown" }
     );
     return;
@@ -305,7 +306,7 @@ bot.callbackQuery(/^hall:(.+)$/, async (ctx) => {
 
   await ctx.editMessageText(
     `✅ Hall set to *${picked}*\n\n` +
-      "🚪 Now type your *room number* (e.g. `D208`):",
+    "🚪 Now type your *room number* (e.g. `D208`):",
     { parse_mode: "Markdown" }
   );
 });
@@ -330,10 +331,10 @@ async function runOrderPlacement(ctx: any, userId: number) {
 
     await ctx.reply(
       `⚠️ *Insufficient Dine Wallet Balance*\n\n` +
-        `📦 Order Total: *₦${total.toLocaleString()}*\n` +
-        `💰 Current Balance: *₦${userBalance.toLocaleString()}*\n` +
-        `📉 Short by: *₦${deficit.toLocaleString()}*\n\n` +
-        `_Top up your wallet with test cards to authorize Dine to pay Prime for you!_`,
+      `📦 Order Total: *₦${total.toLocaleString()}*\n` +
+      `💰 Current Balance: *₦${userBalance.toLocaleString()}*\n` +
+      `📉 Short by: *₦${deficit.toLocaleString()}*\n\n` +
+      `_Top up your wallet with test cards to authorize Dine to pay Prime for you!_`,
       { reply_markup: kb, parse_mode: "Markdown" }
     );
     return;
@@ -353,10 +354,10 @@ async function runOrderPlacement(ctx: any, userId: number) {
 
     await ctx.reply(
       `✅ *Order Recorded & Wallet Debited!*\n\n` +
-        `Items: *${tray.length}* · Total: *₦${total.toLocaleString()}*\n` +
-        `Hall: *${session.hall}* · Room: *${session.room}*\n` +
-        `💰 Remaining Wallet Balance: *₦${newBal.toLocaleString()}*\n\n` +
-        `⚙️ _Autonomous Telegram ordering agent is in standby mode._`,
+      `Items: *${tray.length}* · Total: *₦${total.toLocaleString()}*\n` +
+      `Hall: *${session.hall}* · Room: *${session.room}*\n` +
+      `💰 Remaining Wallet Balance: *₦${newBal.toLocaleString()}*\n\n` +
+      `⚙️ _Autonomous Telegram ordering agent is in standby mode._`,
       { reply_markup: mainKeyboard, parse_mode: "Markdown" }
     );
     return;
@@ -373,9 +374,9 @@ async function runOrderPlacement(ctx: any, userId: number) {
 
   const processingMsg = await ctx.reply(
     `⏳ *Wallet Debited (₦${total.toLocaleString()}) — Placing order on Prime...*\n\n` +
-      `📦 *${tray.length} item(s)* · Remaining Wallet: ₦${remainingBalance.toLocaleString()}\n` +
-      `📍 *${session.hall}*, Room *${session.room}*\n\n` +
-      `_Autonomous agent routing to vendor & initiating transfer..._`,
+    `📦 *${tray.length} item(s)* · Remaining Wallet: ₦${remainingBalance.toLocaleString()}\n` +
+    `📍 *${session.hall}*, Room *${session.room}*\n\n` +
+    `_Autonomous agent routing to vendor & initiating transfer..._`,
     { parse_mode: "Markdown" }
   );
 
@@ -406,10 +407,10 @@ async function runOrderPlacement(ctx: any, userId: number) {
           if (koraService.isConfigured()) {
             await ctx.reply(
               `💳 *Prime checkout detected!*\n` +
-                `Recipient: *${bankDetails.accountName}*\n` +
-                `Bank: *${bankDetails.bankName}* (\`${bankDetails.accountNumber}\`)\n` +
-                `Amount: *₦${transferAmount.toLocaleString()}*\n\n` +
-                `_Executing automated interbank transfer via Kora API..._`,
+              `Recipient: *${bankDetails.accountName}*\n` +
+              `Bank: *${bankDetails.bankName}* (\`${bankDetails.accountNumber}\`)\n` +
+              `Amount: *₦${transferAmount.toLocaleString()}*\n\n` +
+              `_Executing automated interbank transfer via Kora API..._`,
               { parse_mode: "Markdown" }
             );
 
@@ -425,23 +426,23 @@ async function runOrderPlacement(ctx: any, userId: number) {
             if (disburseResult.success) {
               paymentConfirmations.push(
                 `💸 *Paid ₦${transferAmount.toLocaleString()} to ${bankDetails.accountName}*\n` +
-                  `   • Bank: ${bankDetails.bankName}\n` +
-                  `   • Account: \`${bankDetails.accountNumber}\`\n` +
-                  `   • Ref: \`${disburseResult.reference}\` (Status: ${disburseResult.status})`
+                `   • Bank: ${bankDetails.bankName}\n` +
+                `   • Account: \`${bankDetails.accountNumber}\`\n` +
+                `   • Ref: \`${disburseResult.reference}\` (Status: ${disburseResult.status})`
               );
             } else {
               paymentConfirmations.push(
                 `⚠️ *Transfer to Prime failed:* ${disburseResult.message}\n` +
-                  `Manual transfer target: \`${bankDetails.accountNumber}\` (${bankDetails.bankName})`
+                `Manual transfer target: \`${bankDetails.accountNumber}\` (${bankDetails.bankName})`
               );
             }
           } else {
             paymentConfirmations.push(
               `🏦 *Send ₦${transferAmount.toLocaleString()} to Prime:*\n` +
-                `• Account: \`${bankDetails.accountNumber}\`\n` +
-                `• Bank: *${bankDetails.bankName}*\n` +
-                `• Name: *${bankDetails.accountName}*\n` +
-                `_(Set KORA_SECRET_KEY in .env to auto-pay)_`
+              `• Account: \`${bankDetails.accountNumber}\`\n` +
+              `• Bank: *${bankDetails.bankName}*\n` +
+              `• Name: *${bankDetails.accountName}*\n` +
+              `_(Set KORA_SECRET_KEY in .env to auto-pay)_`
             );
           }
         } else if (result.paystackUrl) {
@@ -659,11 +660,11 @@ bot.command("find", async (ctx) => {
   if (!query) {
     await ctx.reply(
       "🔍 *Find Meals with AI*\n\n" +
-        "Tell me what you're craving or looking for!\n\n" +
-        "Examples:\n" +
-        "• `/find something filling under 2000`\n" +
-        "• `/find protein rich chicken`\n" +
-        "• `/find pepper soup with fish`",
+      "Tell me what you're craving or looking for!\n\n" +
+      "Examples:\n" +
+      "• `/find something filling under 2000`\n" +
+      "• `/find protein rich chicken`\n" +
+      "• `/find pepper soup with fish`",
       { parse_mode: "Markdown" }
     );
     return;
@@ -781,8 +782,8 @@ bot.callbackQuery(/^pick_find:(.+)$/, async (ctx) => {
 
   await ctx.reply(
     `🎉 *Added to Tray!*\n\n` +
-      `Added *${meal.name}* from *${meal.vendorName}* (₦${(meal.priceKobo / 100).toLocaleString()}).\n\n` +
-      `Your tray now has *${tray.length} item(s)*.`,
+    `Added *${meal.name}* from *${meal.vendorName}* (₦${(meal.priceKobo / 100).toLocaleString()}).\n\n` +
+    `Your tray now has *${tray.length} item(s)*.`,
     { parse_mode: "Markdown", reply_markup: kb }
   );
   await ctx.answerCallbackQuery({ text: "Added to tray! 🍽️" });
@@ -793,9 +794,9 @@ bot.command("start", async (ctx) => {
   const firstName = ctx.from?.first_name || "there";
   await ctx.reply(
     `Welcome to Dine, ${firstName}! 🍽️\n\n` +
-      "Feeding decisions made simple.\n\n" +
-      "Tired of wondering what to eat or scrolling through endless menus?\n\n" +
-      "Tap *✨ Decide For Me 🍽️* below and Dine will choose the best meal for your budget and cravings!",
+    "Feeding decisions made simple.\n\n" +
+    "Tired of wondering what to eat or scrolling through endless menus?\n\n" +
+    "Tap *✨ Decide For Me 🍽️* below and Dine will choose the best meal for your budget and cravings!",
     {
       reply_markup: mainKeyboard,
       parse_mode: "Markdown"
@@ -806,13 +807,13 @@ bot.command("start", async (ctx) => {
 bot.command("help", async (ctx) => {
   await ctx.reply(
     "🍽️ *Dine Quick Guide:*\n\n" +
-      "• Tap *✨ Decide For Me 🍽️* to get 3 smart meal recommendations based on your budget and craving.\n" +
-      "• You can also type any budget directly (e.g. `1500` or `2000`).\n" +
-      "• Tap *🛒 My Tray* to view chosen meals.\n" +
-      "• Tap *🔍 Browse Vendors* to view the full directory.\n" +
-      "• Tap *💰 Wallet* to inspect your balance.\n" +
-      "• Tap *👤 My Profile* to view your details.\n" +
-      "• Tap *💬 Talk to Us* for cafeteria support.",
+    "• Tap *✨ Decide For Me 🍽️* to get 3 smart meal recommendations based on your budget and craving.\n" +
+    "• You can also type any budget directly (e.g. `1500` or `2000`).\n" +
+    "• Tap *🛒 My Tray* to view chosen meals.\n" +
+    "• Tap *🔍 Browse Vendors* to view the full directory.\n" +
+    "• Tap *💰 Wallet* to inspect your balance.\n" +
+    "• Tap *👤 My Profile* to view your details.\n" +
+    "• Tap *💬 Talk to Us* for cafeteria support.",
     {
       reply_markup: mainKeyboard,
       parse_mode: "Markdown"
@@ -844,11 +845,11 @@ bot.hears("💰 Wallet", async (ctx) => {
 
   await ctx.reply(
     `💰 *Dine Wallet*\n\n` +
-      `💵 Balance: *₦${balance.toLocaleString()}*\n` +
-      `💱 Currency: *NGN*\n` +
-      `🔒 Status: *Active*` +
-      txnList +
-      `\n\nTap *Fund Wallet* to add money via card.`,
+    `💵 Balance: *₦${balance.toLocaleString()}*\n` +
+    `💱 Currency: *NGN*\n` +
+    `🔒 Status: *Active*` +
+    txnList +
+    `\n\nTap *Fund Wallet* to add money via card.`,
     { reply_markup: kb, parse_mode: "Markdown" }
   );
 });
@@ -865,7 +866,7 @@ bot.command("wallet", async (ctx) => {
 
   await ctx.reply(
     `💰 *Dine Wallet* — ₦${balance.toLocaleString()}\n\n` +
-      `Tap *Fund Wallet* to top up via card.`,
+    `Tap *Fund Wallet* to top up via card.`,
     { reply_markup: kb, parse_mode: "Markdown" }
   );
 });
@@ -891,8 +892,8 @@ bot.callbackQuery("wallet_fund", async (ctx) => {
 
   await ctx.reply(
     "💳 *Fund Your Wallet*\n\n" +
-      "How much would you like to add?\n" +
-      "_Select an amount or type a custom one:_",
+    "How much would you like to add?\n" +
+    "_Select an amount or type a custom one:_",
     { reply_markup: kb, parse_mode: "Markdown" }
   );
 });
@@ -909,7 +910,7 @@ bot.callbackQuery(/^fund_amount:(.+)$/, async (ctx) => {
     session.step = "awaiting_fund_amount";
     await ctx.reply(
       "✏️ *Type the amount you want to fund (in Naira):*\n" +
-        "_e.g. 1500, 2500, 7000_",
+      "_e.g. 1500, 2500, 7000_",
       { parse_mode: "Markdown" }
     );
     return;
@@ -980,16 +981,16 @@ bot.callbackQuery(/^verify_fund:(.+)$/, async (ctx) => {
 
     await ctx.reply(
       `✅ *Payment Confirmed!*\n\n` +
-        `💵 Added: *₦${amount.toLocaleString()}*\n` +
-        `💰 New Balance: *₦${newBalance.toLocaleString()}*\n\n` +
-        `Your wallet is funded! Ready to order? Tap *✨ Decide For Me 🍽️*`,
+      `💵 Added: *₦${amount.toLocaleString()}*\n` +
+      `💰 New Balance: *₦${newBalance.toLocaleString()}*\n\n` +
+      `Your wallet is funded! Ready to order? Tap *✨ Decide For Me 🍽️*`,
       { reply_markup: mainKeyboard, parse_mode: "Markdown" }
     );
   } else {
     await ctx.reply(
       `⏳ *Payment ${result.status === "pending" ? "Still Processing" : "Not Found"}*\n\n` +
-        `Status: ${result.status}\n` +
-        `If you completed the payment, wait a moment and try again.`,
+      `Status: ${result.status}\n` +
+      `If you completed the payment, wait a moment and try again.`,
       {
         reply_markup: new InlineKeyboard().text("🔄 Check Again", `verify_fund:${reference}`),
         parse_mode: "Markdown",
@@ -1026,9 +1027,7 @@ async function initiateFunding(ctx: any, userId: number, amountNaira: number) {
     await ctx.reply(
       `💳 *Fund ₦${amountNaira.toLocaleString()} to Wallet*\n\n` +
         `Tap *Pay Now* to open the secure payment page.\n` +
-        `After payment, tap *I've Paid — Verify* to confirm.\n\n` +
-        `🔑 Ref: \`${result.reference}\`\n\n` +
-        `_🧪 Test cards: 5188 5136 1855 2975 / 09/30 / CVV 123 / PIN 1234 / OTP 123456_`,
+        `After payment, tap *I've Paid — Verify* to confirm.`,
       { reply_markup: kb, parse_mode: "Markdown" }
     );
   } else {
@@ -1044,11 +1043,11 @@ bot.hears("👤 My Profile", async (ctx) => {
   const username = user?.username ? `@${user.username}` : "Not set";
   await ctx.reply(
     "👤 *Student Profile*\n\n" +
-      `• Name: *${user?.first_name || ""} ${user?.last_name || ""}*\n` +
-      `• Username: *${username}*\n` +
-      `• Telegram ID: \`${user?.id}\`\n` +
-      `• Campus: *Covenant University*\n` +
-      `• Preference Profile: *Active*`,
+    `• Name: *${user?.first_name || ""} ${user?.last_name || ""}*\n` +
+    `• Username: *${username}*\n` +
+    `• Telegram ID: \`${user?.id}\`\n` +
+    `• Campus: *Covenant University*\n` +
+    `• Preference Profile: *Active*`,
     {
       reply_markup: mainKeyboard,
       parse_mode: "Markdown"
@@ -1059,8 +1058,8 @@ bot.hears("👤 My Profile", async (ctx) => {
 bot.hears("💬 Talk to Us", async (ctx) => {
   await ctx.reply(
     "💬 *Dine Student Support*\n\n" +
-      "Need food suggestions or having trouble with a vendor?\n\n" +
-      "Send your message directly here and we will assist you!",
+    "Need food suggestions or having trouble with a vendor?\n\n" +
+    "Send your message directly here and we will assist you!",
     {
       reply_markup: mainKeyboard,
       parse_mode: "Markdown"
@@ -1096,7 +1095,7 @@ bot.on("message:text", async (ctx) => {
     session.step = "awaiting_room";
     await ctx.reply(
       `✅ Hall set to *${text}*\n\n` +
-        "🚪 Now type your *room number* (e.g. `D208`):",
+      "🚪 Now type your *room number* (e.g. `D208`):",
       { parse_mode: "Markdown" }
     );
     return;
@@ -1109,8 +1108,8 @@ bot.on("message:text", async (ctx) => {
 
     await ctx.reply(
       `✅ Room set to *${session.room}*\n\n` +
-        `📍 Delivering to: *${session.hall}*, Room *${session.room}*\n\n` +
-        `_Placing your order now..._`,
+      `📍 Delivering to: *${session.hall}*, Room *${session.room}*\n\n` +
+      `_Placing your order now..._`,
       { parse_mode: "Markdown" }
     );
 
@@ -1141,6 +1140,29 @@ bot.on("message:text", async (ctx) => {
 
 bot.catch((err) => {
   console.error("Telegram bot error:", err);
+});
+
+// ── HTTP Health Check Server (Enables 100% Free Hosting on Render / Koyeb) ───
+const PORT = Number(process.env.PORT) || 3000;
+const server = http.createServer((req, res) => {
+  if (req.url === "/" || req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        status: "ok",
+        app: "Dine Telegram Bot",
+        uptime: process.uptime(),
+        time: new Date().toISOString(),
+      })
+    );
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Dine health & status server listening on port ${PORT}`);
 });
 
 bot.start();
