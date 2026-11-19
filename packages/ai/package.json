@@ -8,6 +8,7 @@
   "scripts": {
     "auth": "tsx src/auth-session.ts",
     "test:order": "tsx src/test-order.ts",
+    "test:kora": "tsx src/test-kora.ts",
     "find": "tsx src/find/cli.ts",
     "recommend": "tsx src/recommend/cli.ts",
     "menu:extract": "tsx src/recommend/extract-prime-menu.ts",
@@ -15,7 +16,8 @@
     "context:ingest": "tsx src/context/ingest-cli.ts",
     "eval:find": "tsx src/eval/run-find-eval.ts",
     "demo": "tsx src/demo.ts",
-    "test": "node --import tsx --test src/recommend/recommend.test.ts src/context/context.test.ts src/contracts.test.ts src/eval/grade.test.ts src/plan/plan.test.ts src/find/presearch.test.ts src/order/prime-flow.test.ts src/plan/flow.test.ts src/find/fallback.test.ts src/find/cache.test.ts"
+    "pay:demo": "tsx src/order/pay-demo.ts",
+    "test": "node --import tsx --test src/recommend/recommend.test.ts src/context/context.test.ts src/contracts.test.ts src/eval/grade.test.ts src/plan/plan.test.ts src/find/presearch.test.ts src/order/prime-flow.test.ts src/order/payments.test.ts src/plan/flow.test.ts src/find/fallback.test.ts src/find/cache.test.ts"
   },
   "dependencies": {
     "@google/genai": "^3.0.0",

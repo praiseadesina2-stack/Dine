@@ -80,7 +80,7 @@ export function getBudgetLimits(bracket: BudgetBracket): { min: number; max: num
       return { min: 1000, max: 2000, label: "₦1,000 – ₦2,000" };
     case "2000_3500":
       return { min: 2000, max: 3500, label: "₦2,000 – ₦3,500" };
-    case "any":
+    case "any": 
     default:
       return { min: 0, max: 10000, label: "Any Budget" };
   }
