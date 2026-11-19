@@ -11,7 +11,7 @@ import { parseBankTransfer } from "./prime-transfer.js";
 import { payeeAllowed, payPrimeTransfer, type KoraPayouts } from "./pay-transfer.js";
 import { similarity, suggestNames } from "./suggest.js";
 import { payeesFor, runOrderAndPay } from "./order-and-pay.js";
-import { dineFeeKobo, orderCharges, primeFeeKobo } from "./charges.js";
+import { dineFeeKobo, orderCharges, packAllowanceKobo, primeFeeKobo, studentCharge } from "./charges.js";
 import { trayToCartLines } from "./tray.js";
 import { FakePrime } from "./sim-prime.js";
 import { WalletService } from "../wallet.js";
@@ -73,6 +73,18 @@ test("transfer mode: a Paystack link is not paid, and a wallet-pay button is nev
   const r2 = await runOrderFlow(ask, shawarma, { payWith: "transfer" });
   assert.ok(!r2.ok && r2.code === "CHECKOUT_UNMAPPED", JSON.stringify(r2));
   assert.ok(!ask.clicks.includes("Pay with wallet"));
+});
+
+test("Prime's delivery question is answered with the saved address, then the transfer is read", async () => {
+  const bot = new FakePrime({
+    cartButtons: ["Checkout →"],
+    checkoutReply: { text: "📍 Deliver to Joseph Hall, Room D208?", buttons: [{ row: 0, col: 0, label: "✅ Deliver here" }, { row: 1, col: 0, label: "🏠 Change hall" }, { row: 1, col: 1, label: "🔢 Change room" }] },
+    walletPayButton: { label: "✅ Deliver here", reply: { text: transferText("2,600"), buttons: [] } },
+  });
+  const r = await runOrderFlow(bot, shawarma, { payWith: "transfer" });
+  assert.ok(r.ok && r.payment.status === "awaiting_transfer", JSON.stringify(r));
+  assert.ok(r.ok && r.steps.includes("Prime delivers to Joseph Hall, Room D208"));
+  assert.ok(!bot.clicks.some((c) => /change/i.test(c)), "never changes the address on its own");
 });
 
 test("wallet mode still takes a transfer request when that is what Prime shows", async () => {
@@ -275,9 +287,11 @@ test("an order that fails before checkout never reaches Kora", async () => {
 
 // ---------------------------------------------------------------- charges: Prime ₦600, Dine ₦100, per order
 
-test("charges: Prime is paid food + ₦600; the student pays food + ₦600 + ₦100", () => {
-  const c = orderCharges(200_000, { primeFeeKobo: 60_000, dineFeeKobo: 10_000 });
-  assert.deepEqual(c, { foodKobo: 200_000, primeFeeKobo: 60_000, dineFeeKobo: 10_000, payPrimeKobo: 260_000, chargeStudentKobo: 270_000 });
+test("charges: reserve food + pack allowance + ₦600 + ₦100; charge what Prime actually asked + ₦100", () => {
+  const c = orderCharges(150_000, 1, { primeFeeKobo: 60_000, dineFeeKobo: 10_000, packAllowanceKobo: 30_000 });
+  assert.deepEqual(c, { foodKobo: 150_000, maxPacksKobo: 30_000, primeFeeKobo: 60_000, dineFeeKobo: 10_000, payPrimeKobo: 240_000, chargeStudentKobo: 250_000 });
+  // Live 19 Nov: Potato Chips (Small) ₦1,500 + ₦200 pack → Prime asks ₦1,700 + ₦600 = ₦2,300, within the ₦2,400 limit.
+  assert.equal(studentCharge(230_000, 10_000), 240_000, "student pays ₦2,400; ₦100 of the allowance goes back");
 });
 
 test("the tray conversion carries the charges, once per order however many items", () => {
@@ -288,8 +302,9 @@ test("the tray conversion carries the charges, once per order however many items
   ]);
   assert.ok(conv.ok);
   assert.equal(conv.ok && conv.totalKobo, 550_000);
-  assert.equal(conv.ok && conv.charges.payPrimeKobo, 550_000 + primeFeeKobo());
-  assert.equal(conv.ok && conv.charges.chargeStudentKobo, 550_000 + primeFeeKobo() + dineFeeKobo());
+  assert.equal(conv.ok && conv.charges.maxPacksKobo, 3 * packAllowanceKobo(), "allowance per item (3 items)");
+  assert.equal(conv.ok && conv.charges.payPrimeKobo, 550_000 + 3 * packAllowanceKobo() + primeFeeKobo());
+  assert.equal(conv.ok && conv.charges.chargeStudentKobo, 550_000 + 3 * packAllowanceKobo() + primeFeeKobo() + dineFeeKobo());
 });
 
 test("Prime asking for the food without its fee is a mismatch: nothing paid", async () => {

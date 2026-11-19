@@ -97,7 +97,8 @@ export interface AgentOrderResult {
 
 /** How long to wait for Prime to answer one message or button press. */
 const REPLY_TIMEOUT_MS = 12_000;
-const POLL_MS = 400;
+/** Telegram rate-limits reading history ("flood wait" seen at 400 ms); poll more gently. */
+const POLL_MS = 900;
 
 /** One order at a time per Telegram session: concurrent orders would read each other's bot replies. */
 const sessionLocks = new Map<string, Promise<unknown>>();
@@ -270,26 +271,51 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
 }
 
 /**
- * PrimeBot over GramJS. Prime either edits its message in place or sends a new one,
- * so a reply is "the latest incoming message, once it differs from what we had".
+ * PrimeBot over GramJS. Prime may answer with several messages at once (on /start: "Hi
+ * <name>! 👋" carrying the bottom keyboard with 🛒 My Cart and 💰 Wallet, then a greeting
+ * with inline buttons), and may edit a message in place instead of sending a new one. So
+ * a reply is EVERY incoming message that is new or changed since the action, merged into
+ * one screen: texts joined, buttons from all of them (rows numbered on, message by message).
  */
 class TelegramPrimeBot implements PrimeBot {
-  private messages = new WeakMap<BotScreen, any>();
+  /** Which Telegram message (and position in it) each screen button came from. */
+  private origin = new WeakMap<BotButton, { message: any; i: number; j: number; reply: boolean; text: string }>();
 
   constructor(private client: TelegramClient, private bot: any) {}
 
   async start(): Promise<BotScreen> {
-    const before = await this.latestKey();
+    const before = await this.snapshot();
     await this.client.sendMessage(this.bot, { message: "/start" });
     return this.waitForReply(before);
   }
 
-  async click(screen: BotScreen, button: BotButton): Promise<BotScreen> {
-    const message = this.messages.get(screen);
-    if (!message) throw new Error("screen has no Telegram message");
-    const before = await this.latestKey();
-    await message.click({ i: button.row, j: button.col });
+  async click(_screen: BotScreen, button: BotButton): Promise<BotScreen> {
+    const from = this.origin.get(button);
+    if (!from) throw new Error(`button "${button.label}" is not from a Prime message`);
+    const before = await this.snapshot();
+    // Bottom-keyboard buttons just send their text; inline buttons are pressed on their message.
+    if (from.reply) await this.client.sendMessage(this.bot, { message: from.text });
+    else await from.message.click({ i: from.i, j: from.j });
     return this.waitForReply(before);
+  }
+
+  private stamp(m: any): string {
+    return `${m.editDate ?? 0}:${m.message ?? ""}`;
+  }
+
+  /** Recent messages (id → edit stamp), to tell new or edited messages from old ones. */
+  private async snapshot(): Promise<Map<number, string>> {
+    const recent = await this.client.getMessages(this.bot, { limit: 10 });
+    return new Map(recent.map((m: any) => [m.id, this.stamp(m)]));
+  }
+
+  /** Incoming messages new or changed since `before`, oldest first. */
+  private async changedSince(before: Map<number, string>): Promise<any[]> {
+    const maxId = Math.max(0, ...before.keys());
+    const recent = await this.client.getMessages(this.bot, { limit: 10 });
+    return [...recent]
+      .filter((m: any) => !m.out && (m.id > maxId || (before.has(m.id) && before.get(m.id) !== this.stamp(m))))
+      .sort((a: any, b: any) => a.id - b.id);
   }
 
   /** Messages (id → edit stamp) present at the last markChat(); anything else is new. */
@@ -318,41 +344,42 @@ class TelegramPrimeBot implements PrimeBot {
     return null;
   }
 
-  private async latest(): Promise<any | null> {
-    const [m] = await this.client.getMessages(this.bot, { limit: 1 });
-    return m && !m.out ? m : null;
-  }
-
-  private key(m: any): string {
-    return m ? `${m.id}:${m.editDate ?? 0}:${m.message ?? ""}` : "";
-  }
-
-  private async latestKey(): Promise<string> {
-    return this.key(await this.latest());
-  }
-
-  private async waitForReply(beforeKey: string): Promise<BotScreen> {
+  private async waitForReply(before: Map<number, string>): Promise<BotScreen> {
     const deadline = Date.now() + REPLY_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, POLL_MS));
-      const m = await this.latest();
-      if (m && this.key(m) !== beforeKey) {
-        // Give Prime a moment to finish editing a multi-step update, then take the settled message.
-        await new Promise((r) => setTimeout(r, POLL_MS));
-        const settled = (await this.latest()) ?? m;
-        return this.toScreen(settled);
+      let changed = await this.changedSince(before);
+      if (!changed.length) continue;
+      // Prime may still be sending its second message or finishing an edit: wait until
+      // nothing more changes, then take everything that did.
+      for (let i = 0; i < 4; i++) {
+        await new Promise((r) => setTimeout(r, POLL_MS * 2));
+        const again = await this.changedSince(before);
+        const same = again.length === changed.length && again.every((m: any, k: number) => m.id === changed[k].id && this.stamp(m) === this.stamp(changed[k]));
+        changed = again;
+        if (same) break;
       }
+      return this.toScreen(changed);
     }
     throw new Error("Prime did not reply in time");
   }
 
-  private toScreen(m: any): BotScreen {
+  private toScreen(input: any | any[]): BotScreen {
+    const msgs: any[] = Array.isArray(input) ? input : [input];
     const buttons: BotButton[] = [];
-    (m.replyMarkup?.rows ?? []).forEach((row: any, r: number) =>
-      (row.buttons ?? []).forEach((btn: any, c: number) => buttons.push({ row: r, col: c, label: String(btn.text ?? ""), ...(btn.url ? { url: btn.url } : {}) })),
-    );
-    const screen: BotScreen = { text: String(m.message ?? ""), buttons };
-    this.messages.set(screen, m);
-    return screen;
+    let rowBase = 0;
+    for (const m of msgs) {
+      const rows: any[] = m.replyMarkup?.rows ?? [];
+      const reply = m.replyMarkup?.className === "ReplyKeyboardMarkup";
+      rows.forEach((row: any, r: number) =>
+        (row.buttons ?? []).forEach((btn: any, c: number) => {
+          const b: BotButton = { row: rowBase + r, col: c, label: String(btn.text ?? ""), ...(btn.url ? { url: btn.url } : {}) };
+          this.origin.set(b, { message: m, i: r, j: c, reply, text: String(btn.text ?? "") });
+          buttons.push(b);
+        }),
+      );
+      rowBase += rows.length;
+    }
+    return { text: msgs.map((m) => String(m.message ?? "")).join("\n\n"), buttons };
   }
 }

@@ -181,14 +181,26 @@ export function parseItemScreen(text: string): ItemScreen | null {
   const total = field("Total")?.match(naira);
   const qty = Number(field("Qty"));
   if (!name || !price || !total || !Number.isInteger(qty)) return null;
-  const pack = field("Pack")?.match(naira);
-  const packs = field("Packs");
+  // Packs, two layouts: "Pack: ₦200 each" + "Packs: 1" (Oct 2026), or "Packs: 1 × ₦200" (Nov 2026).
+  let packKobo = field("Pack")?.match(naira)?.[1];
+  let packs: number | undefined;
+  const packsField = field("Packs");
+  if (packsField != null) {
+    const combined = packsField.match(/^(\d+)\s*×\s*₦\s*([\d,]+)/);
+    if (combined) {
+      packs = Number(combined[1]);
+      packKobo = combined[2];
+    } else {
+      packs = Number(packsField);
+    }
+    if (!Number.isInteger(packs)) return null;
+  }
   return {
     name,
     priceKobo: kobo(price[1]),
     qty,
-    ...(pack ? { packKobo: kobo(pack[1]) } : {}),
-    ...(packs != null ? { packs: Number(packs) } : {}),
+    ...(packKobo ? { packKobo: kobo(packKobo) } : {}),
+    ...(packs != null ? { packs } : {}),
     totalKobo: kobo(total[1]),
   };
 }
@@ -209,6 +221,8 @@ const PAYSTACK = /https?:\/\/(?:checkout\.)?paystack\.(?:com|co)\/\S+/i;
 const ORDER_REF = /order\s*(?:id|ref(?:erence)?|no\.?|number|#)\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{3,})/i;
 const CONFIRMED = /order\s+(?:has\s+been\s+|was\s+)?(?:placed|confirmed|received)/i;
 const EMPTY_CART = /nothing here yet/i;
+/** Prime's delivery question after checkout: "📍 Deliver to Joseph Hall, Room D208?" (seen live 19 Nov 2026). */
+const DELIVER_TO = /deliver to\s+(.+?)\s*\?/i;
 /** Prime's home greeting with the account's registered name: "Hi mark! 👋" (crawled 19 Oct). */
 const GREETING = /^\s*hi\s+([^!\n]+?)\s*!/im;
 
@@ -217,7 +231,10 @@ const GREETING = /^\s*hi\s+([^!\n]+?)\s*!/im;
  * unknown until the cart and checkout are mapped with a test account; until then a
  * checkout attempt stops with CHECKOUT_UNMAPPED unless one of these appears.
  */
-export const CHECKOUT_LABELS = ["Checkout", "Check out", "Proceed to checkout", "Place order", "Pay now"];
+export const CHECKOUT_LABELS = [
+  "Checkout →", // Prime's real cart button (seen 19 Nov 2026, with "− Clear cart" and "🍽 Add more items")
+  "Checkout", "Check out", "Proceed to checkout", "Place order", "Pay now",
+];
 
 const MAX_PAGES = 6;
 
@@ -339,20 +356,34 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     if (!locations) return fail("UNEXPECTED_SCREEN", "home screen has no I'm Hungry / See all vendors button");
 
     stage = "vendor_list";
-    const groups = line.location === "inside_cafeteria" ? ["Inside Cafeteria"] : line.location === "outside_cafeteria" ? ["Outside Cafeteria"] : ["Outside Cafeteria", "Inside Cafeteria"];
     let menu: BotScreen | null = null;
-    for (const group of groups) {
+    /** Pages through a vendor list looking for the exact vendor button: its menu, a stop, or neither. */
+    const searchList = async (first: BotScreen): Promise<{ stop?: OrderFlowResult; menu?: BotScreen }> => {
+      let list: BotScreen | null = first;
+      for (let page = 0; list && page < MAX_PAGES; page++) {
+        if (vendorStatus(list.text, line.vendorName) === "closed") return { stop: fail("VENDOR_CLOSED", `${line.vendorName} is closed on Prime`) };
+        vendorLabels.push(...list.buttons.map((b) => b.label));
+        const opened = await press(list, line.vendorName, "vendor");
+        if (opened) return { menu: opened };
+        list = await press(list, "Next ▶", "next page");
+      }
+      return {};
+    };
+    const groups = line.location === "inside_cafeteria" ? ["Inside Cafeteria"] : line.location === "outside_cafeteria" ? ["Outside Cafeteria"] : ["Outside Cafeteria", "Inside Cafeteria"];
+    const hasGroups = ["Inside Cafeteria", "Outside Cafeteria"].some((g) => locations!.buttons.some((b) => normalise(b.label).startsWith(normalise(g))));
+    if (!hasGroups) {
+      // Prime's current layout (Nov 2026): "I'm Hungry" opens the vendor list directly.
+      const found = await searchList(locations);
+      if (found.stop) return found.stop;
+      menu = found.menu ?? null;
+    }
+    for (const group of hasGroups ? groups : []) {
       const groupButton = locations.buttons.find((b) => normalise(b.label).startsWith(normalise(group)));
       if (!groupButton) continue;
       steps.push(`pressed "${groupButton.label}"`);
-      let list: BotScreen | null = await bot.click(locations, groupButton);
-      for (let page = 0; list && page < MAX_PAGES; page++) {
-        if (vendorStatus(list.text, line.vendorName) === "closed") return fail("VENDOR_CLOSED", `${line.vendorName} is closed on Prime`);
-        vendorLabels.push(...list.buttons.map((b) => b.label));
-        menu = await press(list, line.vendorName, "vendor");
-        if (menu) break;
-        list = await press(list, "Next ▶", "next page");
-      }
+      const found = await searchList(await bot.click(locations, groupButton));
+      if (found.stop) return found.stop;
+      menu = found.menu ?? null;
       if (menu) break;
       if (groups.length > 1) {
         const back = await bot.start();
@@ -369,7 +400,22 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     if (status !== "active") return fail(status === "closed" ? "VENDOR_CLOSED" : "UNEXPECTED_SCREEN", `vendor menu shows ${line.vendorName} as ${status}`);
     let item: BotScreen | null = null;
     for (let page = 0, screen: BotScreen | null = menu; screen && page < MAX_PAGES; page++) {
-      itemLabels.push(...screen.buttons.map((b) => b.label.replace(/^\s*choose\s+/i, "")));
+      itemLabels.push(...screen.buttons.map((b) => b.label.replace(/^\s*choose\s+/i, "").replace(/\s*·\s*₦[\d,]+\s*$/, "")));
+      // Prime's current menu (Nov 2026): "<Item> · ₦<price>". Exact name AND exact price.
+      const priced = screen.buttons.filter((b) => {
+        const m = b.label.match(/^(.*?)\s*·\s*₦\s*([\d,]+)\s*$/);
+        return m && normalise(m[1]) === normalise(line.itemName);
+      });
+      if (priced.length === 1) {
+        const shown = kobo(priced[0].label.match(/₦\s*([\d,]+)\s*$/)![1]);
+        if (shown !== line.expectedPriceKobo) {
+          return fail("PRICE_CHANGED", `${line.itemName}: Prime shows ₦${shown / 100}, approved ₦${line.expectedPriceKobo / 100}`);
+        }
+        steps.push(`pressed "${priced[0].label}" (item)`);
+        item = await bot.click(screen, priced[0]);
+        break;
+      }
+      // The crawled layout (Oct 2026): "Choose <Item>".
       item = await press(screen, `Choose ${line.itemName}`, "item");
       if (item) break;
       screen = await press(screen, "Next ▶", "next page");
@@ -499,6 +545,16 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     const charged = { totalKobo, primeFeeKobo: primeFee, amountDueKobo: dueKobo };
     let after = await press(filled, checkoutLabel, "checkout");
     if (!after) return fail("BOT_ERROR", "checkout button could not be pressed");
+    // Prime asks where to deliver ("📍 Deliver to Joseph Hall, Room D208?", seen live 19 Nov
+    // 2026): confirm the address saved on the Dine Prime account. Changing it per student
+    // (🏠 Change hall / 🔢 Change room) is not mapped yet.
+    const deliverTo = after.text.match(DELIVER_TO)?.[1];
+    if (deliverTo) {
+      steps.push(`Prime delivers to ${deliverTo}`);
+      const confirmed = await press(after, "✅ Deliver here", "confirm delivery address");
+      if (!confirmed) return fail("UNEXPECTED_SCREEN", "Prime asked where to deliver but has no Deliver here button");
+      after = confirmed;
+    }
     const ref = after.text.match(ORDER_REF)?.[1];
 
     // Prime asks for a bank transfer: returned for payment, never paid here. Prime's amount

@@ -22,10 +22,9 @@ async function runTestOrder() {
 
   const result = await agent.placeOrder({
     botUsername: process.env.PRIME_BOT_USERNAME || "orderfromprimebot",
-    vendorName: "Delish Yamarita",
-    itemName: "Delish Pack + 1 Kebab",
-    expectedPriceKobo: 220_000, // ₦2,200 on the crawl; the order stops if Prime shows another price
-    location: "outside_cafeteria",
+    vendorName: "Grandpa Chips",
+    itemName: "Potato Chips (Small)",
+    expectedPriceKobo: 150_000, // ₦1,500 on Prime (19 Nov 2026), plus a ₦200 pack; stops if Prime shows another price
   });
 
   console.log("\n--- Agent Execution Result ---");
@@ -38,6 +37,14 @@ async function runTestOrder() {
   }
   if (result.orderRef) console.log("Prime order ref:", result.orderRef);
   if (result.totalKobo != null) console.log("Prime total: ₦" + result.totalKobo / 100);
+  if (result.amountDueKobo != null) console.log("Due to Prime (with its fee): ₦" + result.amountDueKobo / 100);
+  if (result.transfer) console.log(`Prime's virtual account: ${result.transfer.accountNumber} (${result.transfer.bankName}) · ${result.transfer.accountName ?? "no name shown"} · ₦${result.transfer.amountKobo / 100}`);
+  if (result.payout) {
+    console.log(`Kora payout: ${result.payout.status} · ref ${result.payout.reference}: ${result.payout.detail}`);
+    for (const c of result.payout.checks) console.log("  ✓", c);
+    console.log("Student would see:", result.payout.message);
+  }
+  if (result.suggestions?.length) console.log("Did you mean:", result.suggestions.join(", "));
   if (result.payment) console.log(`Payment: ${result.payment.status} (${result.payment.method}): ${result.payment.detail}`);
   if (result.topUp) {
     const a = result.topUp.fundingAccount;
@@ -45,4 +52,5 @@ async function runTestOrder() {
   }
 }
 
-runTestOrder().catch(console.error);
+// The Telegram client keeps the process alive; exit once the result is printed.
+runTestOrder().catch(console.error).finally(() => process.exit(0));

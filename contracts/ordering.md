@@ -48,7 +48,12 @@ Code, not a model. It drives Prime's Telegram bot (`@orderfromprimebot`) through
 
 **Failure codes**: `CART_NOT_EMPTY`, `VENDOR_NOT_FOUND`, `VENDOR_CLOSED`, `ITEM_NOT_FOUND`, `ITEM_MISMATCH`, `PRICE_CHANGED`, `CART_MISMATCH`, `CHECKOUT_UNMAPPED`, `PRIME_WALLET_LOW`, `TRANSFER_MISMATCH` (Prime asked for a transfer of a different amount than the verified cart; nothing paid), `INVALID_ORDER` (empty tray, quantity outside 1 to 10, or a line without `expectedPriceKobo`), `UNEXPECTED_SCREEN`, `BOT_ERROR`. When `cartTouched` is true the Dine account's Prime cart may hold items; it must be cleared before any retry (the next order refuses a non-empty cart).
 
-### Prime's flow, as the agent walks it
+### Prime's flow, live (checked 19 Nov 2026 with a test order)
+
+`/start` → two messages: "Hi That! 👋" with a bottom keyboard (**I'm Hungry 🍽️**, **🛒 My Cart**, **💰 Wallet**, …) and a greeting with inline buttons → **I'm Hungry** opens the vendor list directly (no Inside/Outside step; `<Vendor> · 🟢 Active`, 5 pages, **Next ▶**) → vendor menu with item buttons **`<Item> · ₦<price>`** → item screen (`Price`, `Qty`, `Packs: 1 × ₦200`, `Total`; **−/+**, **Add to cart ✓**) → **🛒 My Cart** (`1× <Item> · ₦1,500 + ₦200 pack`; **− Clear cart**, **Checkout →**) → **"📍 Deliver to Joseph Hall, Room D208?"** (**✅ Deliver here**, **🏠 Change hall** (10 halls), **🔢 Change room**) → payment (not yet seen).
+Dine's Prime account is registered as **"That"**, so its virtual accounts should read **"Prime That"**. The agent handles every step up to the delivery question, and confirms the saved address; changing hall/room per student is not mapped.
+
+### Prime's flow, as crawled (19 Oct 2026; superseded above)
 
 `/start` → **I'm Hungry 🍽️** → **Inside / Outside Cafeteria** → vendor list (paged, **Next ▶**) → vendor menu (`<Vendor> · 🟢 Active`, **Choose <item>**, paged) → item screen (`Price`, `Qty`, `Pack`, `Packs`, `Total`) → **Add to cart ✓** → **🛒 My Cart** → checkout.
 Mapped from the crawl of `@orderfromprimebot` (19 Oct) up to **Add to cart**. The cart and checkout were never crawled.

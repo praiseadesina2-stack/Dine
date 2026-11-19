@@ -32,6 +32,11 @@ test("item screen parsing, with and without packs", () => {
   const chips = parseItemScreen("Chips (Small)\n\n\nPrice: ₦1500\nPack: ₦200 each\n\nQty: 1\nPacks: 1\n\nTotal: ₦1700");
   assert.deepEqual(chips, { name: "Chips (Small)", priceKobo: 150_000, qty: 1, packKobo: 20_000, packs: 1, totalKobo: 170_000 });
   assert.equal(parseItemScreen("Slash Shawarma · 🟢 Active"), null);
+  // Prime's current item screen (seen live 19 Nov 2026).
+  assert.deepEqual(
+    parseItemScreen("Potato Chips (Small)\nPrice: ₦1500\nQty: 1\nPacks: 1 × ₦200\nTotal: ₦1700\n👇 Add up to 2 topping"),
+    { name: "Potato Chips (Small)", priceKobo: 150_000, qty: 1, packKobo: 20_000, packs: 1, totalKobo: 170_000 },
+  );
 });
 
 test("walks Prime's real screens to the exact item and adds only that to the cart", async () => {

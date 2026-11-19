@@ -32,6 +32,7 @@ import {
   primeCatalogue,
   loadReviewStore,
   trayToCartLines,
+  studentCharge,
   type MealSuggestion,
   type RecommendRequest,
 } from "@dine/ai";
@@ -343,7 +344,7 @@ async function runOrderPlacement(ctx: any, userId: number) {
     await ctx.reply(
       `⚠️ *Insufficient Dine Wallet Balance*\n\n` +
       `📦 Order Total: *₦${total.toLocaleString()}*\n` +
-      `_(food ${naira(charges.foodKobo)} + Prime fee ${naira(charges.primeFeeKobo)} + service fee ${naira(charges.dineFeeKobo)})_\n` +
+      `_(food ${naira(charges.foodKobo)} + up to ${naira(charges.maxPacksKobo)} packs + Prime fee ${naira(charges.primeFeeKobo)} + service fee ${naira(charges.dineFeeKobo)})_\n` +
       `💰 Current Balance: *₦${userBalance.toLocaleString()}*\n` +
       `📉 Short by: *₦${deficit.toLocaleString()}*\n\n` +
       `_Top up your wallet with test cards to authorize Dine to pay Prime for you!_`,
@@ -421,17 +422,23 @@ async function runOrderPlacement(ctx: any, userId: number) {
     if (result.suggestions?.length) text += `\n\nDid you mean: ${result.suggestions.join(", ")}?`;
     text += `\n\nYou haven't been charged.`;
   } else if (result && (status === "verified" || status === "simulated")) {
-    // Prime was paid: take the money from the wallet.
-    await walletService.capture(ref);
+    // Prime was paid: take what Prime actually asked (food, packs, its fee) + Dine's fee;
+    // the unused pack allowance goes back to the wallet.
+    const paidPrime = result.amountDueKobo ?? charges.payPrimeKobo;
+    const charged = studentCharge(paidPrime, charges.dineFeeKobo);
+    await walletService.capture(ref, { amountKobo: charged });
     userTrays.set(userId, []);
     const balance = await walletService.getBalance(String(userId));
+    const foodAndPacks = result.totalKobo ?? charges.foodKobo;
+    const packs = foodAndPacks - charges.foodKobo;
     text =
       `✅ Payment received, order has been confirmed\n\n` +
       tray.map((t) => `• ${t.itemName} (${t.vendorName})`).join("\n") + `\n\n` +
       `🍽 Food: ${naira(charges.foodKobo)}\n` +
-      `🧾 Prime fee: ${naira(charges.primeFeeKobo)}\n` +
+      (packs > 0 ? `🥡 Packs: ${naira(packs)}\n` : "") +
+      `🧾 Prime fee: ${naira(result.primeFeeKobo ?? charges.primeFeeKobo)}\n` +
       `🧾 Service fee: ${naira(charges.dineFeeKobo)}\n` +
-      `💵 Total: ${naira(charges.chargeStudentKobo)}\n` +
+      `💵 Total: ${naira(charged)}\n` +
       `💰 Wallet balance: ₦${balance.toLocaleString()}\n` +
       `📍 ${session.hall}, Room ${session.room}`;
   } else if (result && status === "not_paid") {

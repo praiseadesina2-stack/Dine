@@ -31,9 +31,9 @@ export type TrayConversion =
       /** The food alone, at the prices the student approved. */
       totalKobo: number;
       /**
-       * Food + Prime's ₦600 + Dine's ₦100 (charges.ts). Reserve `charges.chargeStudentKobo`
-       * in the student's wallet; pass `charges.payPrimeKobo` to placeTrayOrder as the most
-       * the agent may pay Prime.
+       * Food + pack allowance + Prime's ₦600 + Dine's ₦100 (charges.ts). Reserve
+       * `charges.chargeStudentKobo`; pass `charges.payPrimeKobo` to placeTrayOrder as the
+       * most the agent may pay Prime; once paid, capture studentCharge(result.amountDueKobo).
        */
       charges: OrderCharges;
     }
@@ -68,5 +68,6 @@ export function trayToCartLines(tray: TrayItemInput[]): TrayConversion {
   }
   if (problems.length) return { ok: false, problems };
   const totalKobo = lines.reduce((s, l) => s + l.expectedPriceKobo * l.qty!, 0);
-  return { ok: true, lines, totalKobo, charges: orderCharges(totalKobo) };
+  const items = lines.reduce((s, l) => s + l.qty!, 0);
+  return { ok: true, lines, totalKobo, charges: orderCharges(totalKobo, items) };
 }

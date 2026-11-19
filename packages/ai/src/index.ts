@@ -21,5 +21,5 @@ export type { FundingAccount, PaymentEvidence, PaymentStatus, PrimeWallet, TopUp
 export { parseBankTransfer, type BankTransfer } from "./order/prime-transfer.js";
 export { payPrimeTransfer, type TransferPayment, type TransferStatus } from "./order/pay-transfer.js";
 export { runOrderAndPay, PRIME_PAID } from "./order/order-and-pay.js";
-export { orderCharges, primeFeeKobo, dineFeeKobo, type OrderCharges } from "./order/charges.js";
+export { orderCharges, studentCharge, primeFeeKobo, dineFeeKobo, packAllowanceKobo, type OrderCharges } from "./order/charges.js";
 export { suggestNames } from "./order/suggest.js";
