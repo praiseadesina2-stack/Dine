@@ -52,7 +52,7 @@ export interface OrderTarget {
   location?: "inside_cafeteria" | "outside_cafeteria";
 }
 
-export type OrderStage = "start" | "cart_check" | "locations" | "vendor_list" | "vendor_menu" | "item" | "add_to_cart" | "cart" | "checkout" | "done";
+export type OrderStage = "start" | "cart_check" | "wallet_check" | "locations" | "vendor_list" | "vendor_menu" | "item" | "add_to_cart" | "cart" | "checkout" | "done";
 
 export type OrderFailure =
   | "CART_NOT_EMPTY"
@@ -63,15 +63,21 @@ export type OrderFailure =
   | "PRICE_CHANGED"
   | "CART_MISMATCH"
   | "CHECKOUT_UNMAPPED"
+  | "INVALID_ORDER"
   | "PRIME_WALLET_LOW"
   | "UNEXPECTED_SCREEN"
   | "BOT_ERROR";
 
+/** PRIME_WALLET_LOW: how much the backend must top up, and where to send it. */
+export type TopUp = { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount };
+
 export type OrderFlowResult =
   | {
       ok: true;
-      /** Prime's total for this order (item plus any packs), in kobo. This is what Dine pays. */
+      /** Prime's total for the whole cart (items, quantities, packs), in kobo. This is what Dine pays. */
       totalKobo: number;
+      /** Every line as Prime showed it when added. */
+      lines: VerifiedLine[];
       paystackUrl?: string;
       /** Prime's order reference, when its confirmation shows one. */
       orderRef?: string;
@@ -89,7 +95,9 @@ export type OrderFlowResult =
       /** Prime's total, once the item screen was read. */
       totalKobo?: number;
       /** PRIME_WALLET_LOW only: how much the backend must top up, and where to send it. */
-      topUp?: { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount };
+      topUp?: TopUp;
+      /** The tray line the order stopped on, when it stopped on one. */
+      item?: { vendorName: string; itemName: string };
       /** Set when checkout was pressed: what the wallet shows about payment. "uncertain" means reconcile before any retry. */
       payment?: PaymentEvidence;
       steps: string[];
@@ -179,16 +187,75 @@ const MAX_PAGES = 6;
 
 // ---------------------------------------------------------------- the flow
 
+/** One tray line. The same vendor and item twice is one line with qty 2 (see mergeLines). */
+export interface CartLine extends OrderTarget {
+  /** How many (default 1, at most MAX_QTY). Set on Prime's item screen with its "+" button. */
+  qty?: number;
+}
+
+/** A line as Prime showed it when it was added to the cart. */
+export interface VerifiedLine {
+  vendorName: string;
+  itemName: string;
+  qty: number;
+  priceKobo: number;
+  /** Prime's total for this line (price × qty plus any packs). */
+  totalKobo: number;
+}
+
+export const MAX_QTY = 10;
+
+/** Same vendor and item (after normalising) become one line with the quantities added. */
+export function mergeLines(lines: CartLine[]): CartLine[] {
+  const merged = new Map<string, CartLine>();
+  for (const line of lines) {
+    const key = `${normalise(line.vendorName)}|${normalise(line.itemName)}`;
+    const qty = line.qty ?? 1;
+    const seen = merged.get(key);
+    if (seen) seen.qty = (seen.qty ?? 1) + qty;
+    else merged.set(key, { ...line, qty });
+  }
+  return [...merged.values()];
+}
+
+/** The "+" in the quantity row ("1 × ₦1500"), not the packs row ("1 pack × ₦200"). */
+function qtyPlusButton(screen: BotScreen): BotButton | undefined {
+  const qtyRow = screen.buttons.find((b) => /^\d+\s*×\s*₦/.test(b.label.trim()))?.row;
+  if (qtyRow == null) return undefined;
+  const plus = screen.buttons.filter((b) => b.row === qtyRow && b.label.trim() === "+");
+  return plus.length === 1 ? plus[0] : undefined;
+}
+
+/** One item, kept for callers that order a single meal. */
 export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<OrderFlowResult> {
+  return runCartOrder(bot, [target]);
+}
+
+/**
+ * Orders a whole tray from Prime as ONE cart and ONE checkout, items from any vendors.
+ *
+ *   1. Prime cart empty; read the Prime wallet.
+ *   2. Verify every line on Prime (vendor open, exact item, approved price). Cart untouched.
+ *   3. The wallet must cover the whole tray, or stop with PRIME_WALLET_LOW. Cart untouched.
+ *   4. Add every line, setting its quantity with "+", re-checking price and total.
+ *   5. The cart must show every item (and Prime's total, when it shows one).
+ *   6. Check out once; pay from the wallet; prove payment by the wallet balance.
+ */
+export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<OrderFlowResult> {
   const steps: string[] = [];
   let stage: OrderStage = "start";
   let cartTouched = false;
   let totalKobo: number | undefined;
   let payment: PaymentEvidence | undefined;
+  let current: CartLine | undefined;
   /** Set once checkout is pressed: from then on money may have moved. */
   let paymentPending: { amountKobo: number; balanceBeforeKobo: number } | undefined;
-  const fail = (code: OrderFailure, detail: string, extra: { topUp?: { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount } } = {}): OrderFlowResult => ({
-    ok: false, code, stage, detail, cartTouched, ...(totalKobo != null ? { totalKobo } : {}), ...(payment ? { payment } : {}), ...extra, steps,
+  const fail = (code: OrderFailure, detail: string, extra: { topUp?: TopUp } = {}): OrderFlowResult => ({
+    ok: false, code, stage, detail, cartTouched,
+    ...(totalKobo != null ? { totalKobo } : {}),
+    ...(payment ? { payment } : {}),
+    ...(current ? { item: { vendorName: current.vendorName, itemName: current.itemName } } : {}),
+    ...extra, steps,
   });
   const press = async (screen: BotScreen, label: string, note = label) => {
     const b = exactButton(screen, label);
@@ -197,17 +264,80 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
     return bot.click(screen, b);
   };
 
+  const lines = mergeLines(tray);
+  if (!lines.length) return fail("INVALID_ORDER", "the tray is empty");
+  for (const l of lines) {
+    if (!Number.isInteger(l.qty) || l.qty! < 1 || l.qty! > MAX_QTY) {
+      current = l;
+      return fail("INVALID_ORDER", `quantity ${l.qty} for ${l.itemName} is not between 1 and ${MAX_QTY}`);
+    }
+  }
+
+  /** Home → vendor → item screen for `line`, checked against what the student approved. */
+  const openItem = async (line: CartLine): Promise<{ item: BotScreen; parsed: ItemScreen } | OrderFlowResult> => {
+    current = line;
+    stage = "locations";
+    const home = await bot.start();
+    steps.push("sent /start");
+    let locations = (await press(home, "I'm Hungry 🍽️")) ?? (await press(home, "🍽 See all vendors"));
+    if (!locations) return fail("UNEXPECTED_SCREEN", "home screen has no I'm Hungry / See all vendors button");
+
+    stage = "vendor_list";
+    const groups = line.location === "inside_cafeteria" ? ["Inside Cafeteria"] : line.location === "outside_cafeteria" ? ["Outside Cafeteria"] : ["Outside Cafeteria", "Inside Cafeteria"];
+    let menu: BotScreen | null = null;
+    for (const group of groups) {
+      const groupButton = locations.buttons.find((b) => normalise(b.label).startsWith(normalise(group)));
+      if (!groupButton) continue;
+      steps.push(`pressed "${groupButton.label}"`);
+      let list: BotScreen | null = await bot.click(locations, groupButton);
+      for (let page = 0; list && page < MAX_PAGES; page++) {
+        if (vendorStatus(list.text, line.vendorName) === "closed") return fail("VENDOR_CLOSED", `${line.vendorName} is closed on Prime`);
+        menu = await press(list, line.vendorName, "vendor");
+        if (menu) break;
+        list = await press(list, "Next ▶", "next page");
+      }
+      if (menu) break;
+      if (groups.length > 1) {
+        const back = await bot.start();
+        locations = (await press(back, "I'm Hungry 🍽️")) ?? (await press(back, "🍽 See all vendors")) ?? locations;
+      }
+    }
+    if (!menu) return fail("VENDOR_NOT_FOUND", `no vendor button named exactly "${line.vendorName}"`);
+
+    stage = "vendor_menu";
+    const status = vendorStatus(menu.text, line.vendorName);
+    if (status !== "active") return fail(status === "closed" ? "VENDOR_CLOSED" : "UNEXPECTED_SCREEN", `vendor menu shows ${line.vendorName} as ${status}`);
+    let item: BotScreen | null = null;
+    for (let page = 0, screen: BotScreen | null = menu; screen && page < MAX_PAGES; page++) {
+      item = await press(screen, `Choose ${line.itemName}`, "item");
+      if (item) break;
+      screen = await press(screen, "Next ▶", "next page");
+    }
+    if (!item) return fail("ITEM_NOT_FOUND", `no button "Choose ${line.itemName}" on ${line.vendorName}'s menu`);
+
+    stage = "item";
+    const parsed = parseItemScreen(item.text);
+    if (!parsed) return fail("UNEXPECTED_SCREEN", "item screen could not be read");
+    if (normalise(parsed.name) !== normalise(line.itemName)) return fail("ITEM_MISMATCH", `Prime opened "${parsed.name}", not "${line.itemName}"`);
+    if (parsed.qty !== 1) return fail("UNEXPECTED_SCREEN", `quantity starts at ${parsed.qty}, expected 1`);
+    if (parsed.priceKobo !== line.expectedPriceKobo) {
+      return fail("PRICE_CHANGED", `${line.itemName}: Prime shows ₦${parsed.priceKobo / 100}, approved ₦${line.expectedPriceKobo / 100}`);
+    }
+    if (parsed.totalKobo !== parsed.priceKobo + (parsed.packKobo ?? 0) * (parsed.packs ?? 0)) {
+      return fail("UNEXPECTED_SCREEN", `${line.itemName}: total ₦${parsed.totalKobo / 100} does not add up`);
+    }
+    return { item, parsed };
+  };
+
   try {
     // 1. The Dine account's Prime cart must be empty, or this order would carry someone else's items.
     stage = "cart_check";
-    let screen = await bot.start();
+    const home = await bot.start();
     steps.push("sent /start");
-    const cart = await press(screen, "🛒 My Cart");
+    const cart = await press(home, "🛒 My Cart");
     if (!cart) return fail("UNEXPECTED_SCREEN", "home screen has no My Cart button");
     if (!EMPTY_CART.test(cart.text)) return fail("CART_NOT_EMPTY", "the Prime cart already has items; clear it before ordering");
 
-    // 1b. The Prime wallet balance before ordering: checked against the total at the item
-    // screen, and the baseline that proves payment after checkout.
     let walletBefore: PrimeWallet;
     try {
       walletBefore = await readPrimeWallet(bot);
@@ -216,91 +346,85 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
     }
     steps.push(`read Prime wallet: ₦${walletBefore.balanceKobo / 100}`);
 
-    // 2. Home → locations.
-    stage = "locations";
-    screen = await bot.start();
-    steps.push("sent /start");
-    let locations = (await press(screen, "I'm Hungry 🍽️")) ?? (await press(screen, "🍽 See all vendors"));
-    if (!locations) return fail("UNEXPECTED_SCREEN", "home screen has no I'm Hungry / See all vendors button");
+    // 2. Verify every line before touching the cart.
+    let estimateKobo = 0;
+    for (const line of lines) {
+      const opened = await openItem(line);
+      if ("ok" in opened) return opened;
+      const { parsed } = opened;
+      // Packs counted per unit here: the larger of the two ways Prime might charge them.
+      estimateKobo += parsed.totalKobo * line.qty!;
+      steps.push(`verified: ${line.qty} × ${parsed.name} at ₦${parsed.priceKobo / 100}`);
+    }
+    current = undefined;
 
-    // 3. Vendor list(s): exact vendor name, paging with Next.
-    stage = "vendor_list";
-    const groups = target.location === "inside_cafeteria" ? ["Inside Cafeteria"] : target.location === "outside_cafeteria" ? ["Outside Cafeteria"] : ["Outside Cafeteria", "Inside Cafeteria"];
-    let menu: BotScreen | null = null;
-    for (const group of groups) {
-      const groupButton = locations.buttons.find((b) => normalise(b.label).startsWith(normalise(group)));
-      if (!groupButton) continue;
-      steps.push(`pressed "${groupButton.label}"`);
-      let list: BotScreen | null = await bot.click(locations, groupButton);
-      for (let page = 0; list && page < MAX_PAGES; page++) {
-        if (vendorStatus(list.text, target.vendorName) === "closed") {
-          return fail("VENDOR_CLOSED", `${target.vendorName} is closed on Prime`);
-        }
-        menu = await press(list, target.vendorName, "vendor");
-        if (menu) break;
-        list = await press(list, "Next ▶", "next page");
+    // 3. The wallet must cover the whole tray.
+    stage = "wallet_check";
+    const topUpFor = (needKobo: number): TopUp => ({
+      shortfallKobo: needKobo - walletBefore.balanceKobo,
+      balanceKobo: walletBefore.balanceKobo,
+      ...(walletBefore.fundingAccount ? { fundingAccount: walletBefore.fundingAccount } : {}),
+    });
+    totalKobo = estimateKobo;
+    if (walletBefore.balanceKobo < estimateKobo) {
+      return fail("PRIME_WALLET_LOW", `Prime wallet has ₦${walletBefore.balanceKobo / 100}, the tray needs ₦${estimateKobo / 100}`, { topUp: topUpFor(estimateKobo) });
+    }
+
+    // 4. Add every line at its quantity.
+    const added: VerifiedLine[] = [];
+    for (const line of lines) {
+      const opened = await openItem(line);
+      if ("ok" in opened) return opened;
+      let { item, parsed } = opened;
+      stage = "add_to_cart";
+      while (parsed.qty < line.qty!) {
+        const plus = qtyPlusButton(item);
+        if (!plus) return fail("UNEXPECTED_SCREEN", `${line.itemName}: no quantity "+" button`);
+        steps.push(`pressed "+" (quantity ${parsed.qty + 1})`);
+        item = await bot.click(item, plus);
+        const next = parseItemScreen(item.text);
+        if (!next || next.qty !== parsed.qty + 1) return fail("UNEXPECTED_SCREEN", `${line.itemName}: quantity did not go up to ${parsed.qty + 1}`);
+        parsed = next;
       }
-      if (menu) break;
-      // Back to the locations screen for the other group.
-      if (groups.length > 1) {
-        const back = await bot.start();
-        locations = (await press(back, "I'm Hungry 🍽️")) ?? (await press(back, "🍽 See all vendors")) ?? locations;
+      if (parsed.priceKobo !== line.expectedPriceKobo) {
+        return fail("PRICE_CHANGED", `${line.itemName}: Prime shows ₦${parsed.priceKobo / 100}, approved ₦${line.expectedPriceKobo / 100}`);
       }
+      if (parsed.totalKobo !== parsed.priceKobo * parsed.qty + (parsed.packKobo ?? 0) * (parsed.packs ?? 0)) {
+        return fail("UNEXPECTED_SCREEN", `${line.itemName}: total ₦${parsed.totalKobo / 100} does not add up at quantity ${parsed.qty}`);
+      }
+      const ok = await press(item, "Add to cart ✓");
+      if (!ok) return fail("UNEXPECTED_SCREEN", `${line.itemName}: no Add to cart button`);
+      cartTouched = true;
+      added.push({ vendorName: line.vendorName, itemName: parsed.name, qty: parsed.qty, priceKobo: parsed.priceKobo, totalKobo: parsed.totalKobo });
+      steps.push(`added: ${parsed.qty} × ${parsed.name}, ₦${parsed.totalKobo / 100}`);
     }
-    if (!menu) return fail("VENDOR_NOT_FOUND", `no vendor button named exactly "${target.vendorName}"`);
-
-    // 4. Vendor menu: must be active; exact "Choose <item>", paging with Next.
-    stage = "vendor_menu";
-    const status = vendorStatus(menu.text, target.vendorName);
-    if (status !== "active") return fail(status === "closed" ? "VENDOR_CLOSED" : "UNEXPECTED_SCREEN", `vendor menu shows ${target.vendorName} as ${status}`);
-    let item: BotScreen | null = null;
-    for (let page = 0, current: BotScreen | null = menu; current && page < MAX_PAGES; page++) {
-      item = await press(current, `Choose ${target.itemName}`, "item");
-      if (item) break;
-      current = await press(current, "Next ▶", "next page");
-    }
-    if (!item) return fail("ITEM_NOT_FOUND", `no button "Choose ${target.itemName}" on ${target.vendorName}'s menu`);
-
-    // 5. Item screen: same item, quantity 1, the approved price.
-    stage = "item";
-    const parsed = parseItemScreen(item.text);
-    if (!parsed) return fail("UNEXPECTED_SCREEN", "item screen could not be read");
-    totalKobo = parsed.totalKobo;
-    if (normalise(parsed.name) !== normalise(target.itemName)) return fail("ITEM_MISMATCH", `Prime opened "${parsed.name}", not "${target.itemName}"`);
-    if (parsed.qty !== 1) return fail("UNEXPECTED_SCREEN", `quantity is ${parsed.qty}, expected 1`);
-    if (parsed.priceKobo !== target.expectedPriceKobo) {
-      return fail("PRICE_CHANGED", `Prime shows ₦${parsed.priceKobo / 100}, approved ₦${target.expectedPriceKobo / 100}`);
-    }
-    const expectedTotal = parsed.priceKobo + (parsed.packKobo ?? 0) * (parsed.packs ?? 0);
-    if (parsed.totalKobo !== expectedTotal) return fail("UNEXPECTED_SCREEN", `total ₦${parsed.totalKobo / 100} does not add up`);
-    steps.push(`item verified: ${parsed.name}, total ₦${parsed.totalKobo / 100}`);
-    if (walletBefore.balanceKobo < parsed.totalKobo) {
-      const shortfallKobo = parsed.totalKobo - walletBefore.balanceKobo;
-      return fail("PRIME_WALLET_LOW", `Prime wallet has ₦${walletBefore.balanceKobo / 100}, order needs ₦${parsed.totalKobo / 100}`, {
-        topUp: { shortfallKobo, balanceKobo: walletBefore.balanceKobo, ...(walletBefore.fundingAccount ? { fundingAccount: walletBefore.fundingAccount } : {}) },
-      });
+    current = undefined;
+    totalKobo = added.reduce((sum, l) => sum + l.totalKobo, 0);
+    if (walletBefore.balanceKobo < totalKobo) {
+      return fail("PRIME_WALLET_LOW", `Prime's cart came to ₦${totalKobo / 100}, more than the ₦${walletBefore.balanceKobo / 100} in the wallet`, { topUp: topUpFor(totalKobo) });
     }
 
-    // 6. Add to cart.
-    stage = "add_to_cart";
-    const added = await press(item, "Add to cart ✓");
-    if (!added) return fail("UNEXPECTED_SCREEN", "item screen has no Add to cart button");
-    cartTouched = true;
-
-    // 7. Cart: exactly this item. 8. Checkout. Both unmapped (see CHECKOUT_LABELS).
+    // 5. The cart shows exactly this tray.
     stage = "cart";
-    const home = await bot.start();
+    const again = await bot.start();
     steps.push("sent /start");
-    const filled = await press(home, "🛒 My Cart");
-    if (!filled || EMPTY_CART.test(filled.text)) return fail("CART_MISMATCH", "the item is not in the cart after Add to cart");
-    if (!normalise(filled.text).includes(normalise(target.itemName))) return fail("CART_MISMATCH", "the cart does not show the ordered item");
+    const filled = await press(again, "🛒 My Cart");
+    if (!filled || EMPTY_CART.test(filled.text)) return fail("CART_MISMATCH", "the cart is empty after adding the tray");
+    const cartText = normalise(filled.text);
+    const missing = added.filter((l) => !cartText.includes(normalise(l.itemName)));
+    if (missing.length) return fail("CART_MISMATCH", `the cart does not show: ${missing.map((l) => l.itemName).join(", ")}`);
+    const shownTotal = filled.text.match(/total[^₦\n]*₦\s*([\d,]+)/i);
+    if (shownTotal && kobo(shownTotal[1]) !== totalKobo) {
+      return fail("CART_MISMATCH", `Prime's cart total is ₦${kobo(shownTotal[1]) / 100}, the tray is ₦${totalKobo / 100}`);
+    }
 
+    // 6. One checkout, paid from the Prime wallet.
     stage = "checkout";
     const checkoutLabel = CHECKOUT_LABELS.find((l) => exactButton(filled, l));
     if (!checkoutLabel) {
       return fail("CHECKOUT_UNMAPPED", `no known checkout button on the cart screen (buttons: ${filled.buttons.map((b) => b.label).join(", ")})`);
     }
-    paymentPending = { amountKobo: parsed.totalKobo, balanceBeforeKobo: walletBefore.balanceKobo };
+    paymentPending = { amountKobo: totalKobo, balanceBeforeKobo: walletBefore.balanceKobo };
     let after = await press(filled, checkoutLabel, "checkout");
     if (!after) return fail("BOT_ERROR", "checkout button could not be pressed");
     // Prime may ask how to pay: always the wallet, never a card or another method.
@@ -315,8 +439,7 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
     const url = after.text.match(PAYSTACK)?.[0] ?? after.buttons.find((b) => b.url && PAYSTACK.test(b.url))?.url;
     const ref = after.text.match(ORDER_REF)?.[1];
 
-    // Proof of payment: the wallet balance, not the checkout message. From here on
-    // money may have moved, so every outcome carries the evidence.
+    // Proof of payment: the wallet balance, not the checkout message.
     let afterKobo: number | undefined;
     try {
       afterKobo = (await readPrimeWallet(bot)).balanceKobo;
@@ -324,20 +447,19 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
     } catch {
       steps.push("could not read Prime wallet after checkout");
     }
-    const judged = judgePayment(walletBefore.balanceKobo, afterKobo, parsed.totalKobo);
     payment = {
       method: url && !paidWithWallet ? "paystack_link" : "prime_wallet",
-      amountKobo: parsed.totalKobo,
+      amountKobo: totalKobo,
       balanceBeforeKobo: walletBefore.balanceKobo,
       ...(afterKobo != null ? { balanceAfterKobo: afterKobo } : {}),
-      ...judged,
+      ...judgePayment(walletBefore.balanceKobo, afterKobo, totalKobo),
     };
     steps.push(`payment ${payment.status}: ${payment.detail}`);
 
     if (!url && !CONFIRMED.test(after.text)) return fail("UNEXPECTED_SCREEN", "checkout gave neither a payment link nor an order confirmation");
 
     stage = "done";
-    return { ok: true, totalKobo: parsed.totalKobo, ...(url ? { paystackUrl: url } : {}), ...(ref ? { orderRef: ref } : {}), payment, steps };
+    return { ok: true, totalKobo, lines: added, ...(url ? { paystackUrl: url } : {}), ...(ref ? { orderRef: ref } : {}), payment, steps };
   } catch (err: any) {
     if (paymentPending && !payment) {
       payment = { method: "prime_wallet", status: "uncertain", ...paymentPending, detail: "Prime stopped replying after checkout; reconcile the wallet before any retry" };

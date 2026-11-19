@@ -6,9 +6,10 @@
  * checkout). The student wallet below is a stand-in for the backend's ledger, and the
  * Kora collection and payout are simulated: only the AI-side logic here is real.
  */
-import { runOrderFlow, type OrderFlowResult, type OrderTarget } from "./prime-flow.js";
+import { runCartOrder, runOrderFlow, type OrderFlowResult, type OrderTarget } from "./prime-flow.js";
 import { judgeTopUp, readPrimeWallet } from "./prime-wallet.js";
 import { FakePrime } from "./sim-prime.js";
+import { trayToCartLines } from "./tray.js";
 
 const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG")}`;
 const say = (s = "") => console.log(s);
@@ -29,7 +30,7 @@ class DemoLedger {
 }
 
 function printOrder(r: OrderFlowResult) {
-  for (const s of r.steps.filter((s) => /wallet|verified|payment|checkout/i.test(s))) say(`     · ${s}`);
+  for (const s of r.steps.filter((s) => /wallet|verified|payment|checkout|added/i.test(s))) say(`     · ${s}`);
   if (r.ok) say(`   → order placed${r.orderRef ? ` (${r.orderRef})` : ""}, payment ${r.payment.status.toUpperCase()}`);
   else say(`   → stopped: ${r.code}, ${r.detail}${r.payment ? `; payment ${r.payment.status.toUpperCase()}` : ""}`);
 }
@@ -53,16 +54,23 @@ async function main() {
   const ledger = new DemoLedger();
   const prime = new FakePrime({ ...confirmed, walletKobo: 50_000 });
 
-  step(1, "Ada funds her Dine wallet with ₦5,000 by bank transfer (Kora collection, signature + lookup verified)");
-  ledger.credit(500_000);
+  step(1, "Ada funds her Dine wallet with ₦12,000 by bank transfer (Kora collection, signature + lookup verified)");
+  ledger.credit(1_200_000);
   say(`   student wallet: ${ledger.show()}`);
 
-  step(2, `Ada taps "Order on Dine" on ${meal.itemName} (${naira(meal.expectedPriceKobo)}). Policy allows; reserve the amount.`);
-  ledger.reserve(meal.expectedPriceKobo);
+  const converted = trayToCartLines([
+    { itemName: "Shawarma + 1 Sausage", vendorName: "Slash Shawarma", price: 2000 },
+    { itemName: "Delish Pack + 1 Kebab", vendorName: "Delish Yamarita", price: 2200 },
+    { itemName: "Shawarma + 1 Sausage", vendorName: "Slash Shawarma", price: 2000 },
+  ]);
+  if (!converted.ok) throw new Error(converted.problems.join("; "));
+  const trayKobo = converted.totalKobo;
+  step(2, `Ada's tray: 2 × Shawarma + 1 Sausage (Slash Shawarma), 1 × Delish Pack + 1 Kebab (Delish Yamarita) = ${naira(trayKobo)}.\n   She taps "Confirm & Order". Policy allows; reserve the amount.`);
+  if (!ledger.reserve(trayKobo)) throw new Error("student wallet cannot cover the order");
   say(`   student wallet: ${ledger.show()}`);
 
-  step(3, "Ordering agent opens Prime and checks Dine's Prime wallet before touching the cart");
-  let r = await runOrderFlow(prime, meal);
+  step(3, "Ordering agent checks every item on Prime and Dine's Prime wallet, before touching the cart");
+  let r = await runCartOrder(prime, converted.lines);
   printOrder(r);
   if (r.ok || r.code !== "PRIME_WALLET_LOW" || !r.topUp) throw new Error("demo expected PRIME_WALLET_LOW");
   const acct = r.topUp.fundingAccount;
@@ -74,21 +82,22 @@ async function main() {
   const landed = judgeTopUp(before, await readPrimeWallet(prime), 1_000_000);
   say(`   agent reads Prime wallet: ${naira(landed.balanceKobo)} → top-up ${landed.status.toUpperCase()}`);
 
-  step(5, "Retry the order (cart was never touched, so a retry is safe)");
-  r = await runOrderFlow(prime, meal);
+  step(5, "Retry: the whole tray goes into ONE Prime cart, ONE checkout (cart was never touched, so a retry is safe)");
+  r = await runCartOrder(prime, converted.lines);
   printOrder(r);
-  settle(r, ledger, meal.expectedPriceKobo);
+  if (r.ok) for (const l of r.lines) say(`     cart: ${l.qty} × ${l.itemName} (${l.vendorName}) ${naira(l.totalKobo)}`);
+  settle(r, ledger, trayKobo);
 
   step(6, "What if Prime charges the wrong amount? (simulated ₦2,200 charge on a ₦2,000 order)");
   const odd = new FakePrime({ ...confirmed, walletKobo: 1_000_000, chargeOverrideKobo: 220_000 });
-  ledger.reserve(meal.expectedPriceKobo);
+  if (!ledger.reserve(meal.expectedPriceKobo)) throw new Error("student wallet cannot cover the order");
   const r2 = await runOrderFlow(odd, meal);
   printOrder(r2);
   settle(r2, ledger, meal.expectedPriceKobo);
 
   step(7, "What if Prime returns only a Paystack link? A link is not a payment.");
   const link = new FakePrime({ cartButtons: ["Checkout"], checkoutReply: { text: "Pay here: https://checkout.paystack.com/abc123", buttons: [] } });
-  ledger.reserve(meal.expectedPriceKobo);
+  if (!ledger.reserve(meal.expectedPriceKobo)) throw new Error("student wallet cannot cover the order");
   const r3 = await runOrderFlow(link, meal);
   printOrder(r3);
   settle(r3, ledger, meal.expectedPriceKobo);

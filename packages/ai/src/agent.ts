@@ -13,8 +13,8 @@ import { fileURLToPath } from "url";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import {
-  runOrderFlow,
-  type BotButton, type BotScreen, type OrderFailure, type OrderStage, type OrderTarget as FlowTarget, type PrimeBot,
+  runCartOrder,
+  type BotButton, type BotScreen, type CartLine, type OrderFailure, type OrderFlowResult, type OrderStage, type OrderTarget as FlowTarget, type PrimeBot, type VerifiedLine,
 } from "./order/prime-flow.js";
 import { judgeTopUp, readPrimeWallet, type FundingAccount, type PaymentEvidence, type PrimeWallet, type TopUpCheck } from "./order/prime-wallet.js";
 
@@ -36,10 +36,14 @@ export interface AgentOrderResult {
   code?: OrderFailure;
   /** How far the order got. */
   stage: OrderStage;
-  /** True once "Add to cart" was pressed: the Prime cart may hold this item and must be cleared before a retry. */
+  /** True once "Add to cart" was pressed: the Prime cart may hold items and must be cleared before a retry. */
   cartTouched: boolean;
-  /** Prime's total (item plus packs) in kobo, once the item screen was read. */
+  /** Prime's total for the whole tray in kobo (items × qty plus packs). This is what Dine pays: reserve against it. */
   totalKobo?: number;
+  /** Success only: every line as Prime showed it when added. */
+  lines?: VerifiedLine[];
+  /** Failure only: the tray line the order stopped on, when it stopped on one. */
+  item?: { vendorName: string; itemName: string };
   paystackUrl?: string;
   orderRef?: string;
   /**
@@ -96,9 +100,19 @@ export class DineOrderingAgent {
     return this.client;
   }
 
-  /** Places one order on Prime. Queues behind any order already running on this session. */
+  /** Places one item on Prime. Same as placeTrayOrder with a one-line tray. */
   public async placeOrder(target: OrderTarget): Promise<AgentOrderResult> {
-    return this.withSession(() => this.placeOrderNow(target));
+    return this.placeTrayOrder([target], target.botUsername);
+  }
+
+  /**
+   * Orders a whole tray from Prime: every line (any vendors) in ONE Prime cart, ONE
+   * checkout, paid from the Prime wallet. Every item is checked before anything goes in
+   * the cart. Queues behind any order already running on this session.
+   * Build `lines` from the bot's tray with trayToCartLines().
+   */
+  public async placeTrayOrder(lines: CartLine[], botUsername?: string): Promise<AgentOrderResult> {
+    return this.withSession(() => this.placeTrayOrderNow(lines, botUsername));
   }
 
   /**
@@ -143,44 +157,49 @@ export class DineOrderingAgent {
     return new TelegramPrimeBot(client, await client.getEntity(username));
   }
 
-  private async placeOrderNow(target: OrderTarget): Promise<AgentOrderResult> {
+  private async placeTrayOrderNow(lines: CartLine[], botUsername?: string): Promise<AgentOrderResult> {
     let bot: PrimeBot;
     try {
-      bot = await this.primeBot(target.botUsername);
+      bot = await this.primeBot(botUsername);
     } catch (err: any) {
       return { success: false, code: "BOT_ERROR", stage: "start", cartTouched: false, message: `Could not reach Prime: ${err?.message ?? err}`, stepsCompleted: [] };
     }
+    return toAgentResult(await runCartOrder(bot, lines));
+  }
+}
 
-    const r = await runOrderFlow(bot, target);
-    if (r.ok) {
-      return {
-        success: true,
-        stage: "done",
-        cartTouched: true,
-        message:
-          r.payment.status === "verified" ? "Order placed on Prime and paid from the Prime wallet."
-          : r.payment.status === "uncertain" ? "Order placed on Prime; payment is uncertain, reconcile before any retry."
-          : r.paystackUrl ? "Order placed on Prime; not paid yet, Prime returned a checkout link."
-          : "Order placed on Prime; not paid yet.",
-        totalKobo: r.totalKobo,
-        paystackUrl: r.paystackUrl,
-        orderRef: r.orderRef,
-        payment: r.payment,
-        stepsCompleted: r.steps,
-      };
-    }
+/** The flow's result in the shape the backend reads. */
+export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
+  if (r.ok) {
     return {
-      success: false,
-      code: r.code,
-      stage: r.stage,
-      cartTouched: r.cartTouched,
-      message: r.detail,
+      success: true,
+      stage: "done",
+      cartTouched: true,
+      message:
+        r.payment.status === "verified" ? "Order placed on Prime and paid from the Prime wallet."
+        : r.payment.status === "uncertain" ? "Order placed on Prime; payment is uncertain, reconcile before any retry."
+        : r.paystackUrl ? "Order placed on Prime; not paid yet, Prime returned a checkout link."
+        : "Order placed on Prime; not paid yet.",
       totalKobo: r.totalKobo,
-      ...(r.payment ? { payment: r.payment } : {}),
-      ...(r.topUp ? { topUp: r.topUp } : {}),
+      lines: r.lines,
+      paystackUrl: r.paystackUrl,
+      orderRef: r.orderRef,
+      payment: r.payment,
       stepsCompleted: r.steps,
     };
   }
+  return {
+    success: false,
+    code: r.code,
+    stage: r.stage,
+    cartTouched: r.cartTouched,
+    message: r.detail,
+    totalKobo: r.totalKobo,
+    ...(r.item ? { item: r.item } : {}),
+    ...(r.payment ? { payment: r.payment } : {}),
+    ...(r.topUp ? { topUp: r.topUp } : {}),
+    stepsCompleted: r.steps,
+  };
 }
 
 /**

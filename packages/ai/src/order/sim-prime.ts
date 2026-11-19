@@ -36,6 +36,8 @@ export interface FakeOptions {
   chargeOverrideKobo?: number;
   /** Throw on the first wallet read after checkout (Prime stops replying). */
   failAfterCheckout?: boolean;
+  /** SYNTHETIC: the "Total" the cart screen shows, when it should disagree with the items (default: the real sum). */
+  cartTotalOverrideKobo?: number;
 }
 
 /** Prime's wallet screen, in the exact format crawled on 19 Oct. */
@@ -44,16 +46,22 @@ export const walletText = (kobo: number) =>
 
 /** Replays crawled screens; keeps a cart so Add to cart and My Cart behave like a real bot. */
 export class FakePrime implements PrimeBot {
+  /** Item names in the cart, one per line. */
   cart: string[];
+  /** Quantities per cart line, same order as `cart`. */
+  cartQty: number[] = [];
   clicks: string[] = [];
   walletKobo: number;
   private current = "";
+  /** Quantity shown on the open item screen. */
+  private qty = 1;
   private checkedOut = false;
   /** Cart total in kobo, from the item screens added. */
   private cartKobo = 0;
 
   constructor(private o: FakeOptions = {}) {
     this.cart = [...(o.cartAtStart ?? [])];
+    this.cartQty = this.cart.map(() => 1);
     this.walletKobo = o.walletKobo ?? 1_000_000;
   }
 
@@ -66,16 +74,25 @@ export class FakePrime implements PrimeBot {
     this.walletKobo -= this.o.chargeOverrideKobo ?? this.cartKobo;
   }
 
-  private screen(id: string): BotScreen {
+  private screen(id: string, qty = 1): BotScreen {
     const s = byId.get(id)!;
     this.current = id;
+    this.qty = qty;
     let text = s.text;
     for (const v of this.o.closed ?? []) text = text.replace(`${v} · 🟢 Active`, `${v} · 🔴 Closed`);
     if (s.kind === "item" && this.o.priceOverride?.[s.label] != null) {
       const naira = this.o.priceOverride[s.label] / 100;
       text = text.replace(/Price: ₦\d+/, `Price: ₦${naira}`).replace(/Total: ₦\d+/, `Total: ₦${naira}`);
     }
-    return { text, buttons: s.buttons.map(({ to: _to, ...b }) => b) };
+    let buttons = s.buttons.map(({ to: _to, ...b }) => b);
+    if (s.kind === "item" && qty !== 1) {
+      // Prime re-renders the item screen with the new quantity and total (packs stay as set).
+      const p = parseItemScreen(text)!;
+      const total = p.priceKobo * qty + (p.packKobo ?? 0) * (p.packs ?? 0);
+      text = text.replace(/Qty: \d+/, `Qty: ${qty}`).replace(/Total: ₦[\d,]+/, `Total: ₦${total / 100}`);
+      buttons = buttons.map((b) => (/^\d+ × ₦/.test(b.label) ? { ...b, label: b.label.replace(/^\d+/, String(qty)) } : b));
+    }
+    return { text, buttons };
   }
 
   async start() {
@@ -88,8 +105,9 @@ export class FakePrime implements PrimeBot {
     if (normalise(button.label) === "my cart") {
       if (!this.cart.length) return this.screen(crawl.screens.find((s) => s.label === "Cart (empty)")!.id);
       // SYNTHETIC cart screen.
+      const total = this.o.cartTotalOverrideKobo ?? this.cartKobo;
       return {
-        text: `🛒 Your Cart\n\n${this.cart.map((i) => `${i} × 1`).join("\n")}`,
+        text: `🛒 Your Cart\n\n${this.cart.map((i, n) => `${i} × ${this.cartQty[n]}`).join("\n")}\n\nTotal: ₦${(total / 100).toLocaleString("en-NG")}`,
         buttons: (this.o.cartButtons ?? []).map((label, col) => ({ row: 0, col, label })),
       };
     }
@@ -97,9 +115,14 @@ export class FakePrime implements PrimeBot {
       if (this.checkedOut && this.o.failAfterCheckout) throw new Error("Prime did not reply in time");
       return { text: walletText(this.walletKobo), buttons: [{ row: 0, col: 0, label: "➕ Top up" }, { row: 0, col: 1, label: "All transactions" }] };
     }
+    if (node.kind === "item" && button.label.trim() === "+" && button.row === 0) {
+      return this.screen(this.current, this.qty + 1);
+    }
     if (normalise(button.label) === "add to cart") {
+      const qty = this.qty;
       this.cart.push(node.label);
-      this.cartKobo += parseItemScreen(this.screen(this.current).text)!.totalKobo;
+      this.cartQty.push(qty);
+      this.cartKobo += parseItemScreen(this.screen(this.current, qty).text)!.totalKobo;
       return { text: "✅ Added to cart", buttons: [] };
     }
     if (this.o.walletPayButton && button.label === this.o.walletPayButton.label) {

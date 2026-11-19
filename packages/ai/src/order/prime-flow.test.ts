@@ -5,9 +5,10 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { exactButton, normalise, parseItemScreen, runOrderFlow, type BotScreen, type OrderTarget } from "./prime-flow.js";
+import { exactButton, mergeLines, normalise, parseItemScreen, runCartOrder, runOrderFlow, type BotScreen, type CartLine, type OrderTarget } from "./prime-flow.js";
 import { judgePayment, judgeTopUp, parseWalletScreen } from "./prime-wallet.js";
 import { crawl, FakePrime, itemScreen, walletText, type FakeOptions } from "./sim-prime.js";
+import { trayToCartLines } from "./tray.js";
 
 const shawarma: OrderTarget = { vendorName: "Slash Shawarma", itemName: "Shawarma + 1 Sausage", expectedPriceKobo: 200_000 };
 
@@ -159,6 +160,97 @@ test("top-up check: landed only when the balance rose by the payout amount", () 
   assert.equal(judgeTopUp(100_000, wallet(600_000), 500_000).status, "landed");
   assert.equal(judgeTopUp(100_000, wallet(400_000), 500_000).status, "not_yet");
   assert.equal(judgePayment(500_000, 500_000, 200_000).status, "not_paid");
+});
+
+// ---------------------------------------------------------------- whole tray, one cart, one checkout
+
+const delish: CartLine = { vendorName: "Delish Yamarita", itemName: "Delish Pack + 1 Kebab", expectedPriceKobo: 220_000 };
+const chips: CartLine = { vendorName: "Grandpa Chips", itemName: "Chips (Small)", expectedPriceKobo: 150_000 };
+/** Shawarma twice (→ qty 2), Delish, Chips with its pack: ₦4,000 + ₦2,200 + ₦1,700 = ₦7,900. */
+const tray: CartLine[] = [shawarma, delish, chips, shawarma];
+const PAID = { cartButtons: ["Checkout"], checkoutReply: { text: "✅ Order placed! Order ID: PR-90002", buttons: [] } };
+
+test("mergeLines: the same item twice is one line with quantity 2", () => {
+  const merged = mergeLines(tray);
+  assert.equal(merged.length, 3);
+  assert.equal(merged.find((l) => l.itemName === shawarma.itemName)?.qty, 2);
+});
+
+test("a whole tray from three vendors goes in ONE cart with ONE checkout, paid and verified", async () => {
+  const bot = new FakePrime({ ...PAID, walletKobo: 1_000_000 });
+  const r = await runCartOrder(bot, tray);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.totalKobo, 790_000);
+  assert.deepEqual(bot.cart, ["Shawarma + 1 Sausage", "Delish Pack + 1 Kebab", "Chips (Small)"]);
+  assert.deepEqual(bot.cartQty, [2, 1, 1], "shawarma set to 2 with +, not added twice");
+  assert.equal(bot.clicks.filter((c) => c === "+").length, 1);
+  assert.equal(bot.clicks.filter((c) => c === "Checkout").length, 1, "one checkout for the whole tray");
+  assert.deepEqual(r.ok && r.lines.map((l) => [l.itemName, l.qty, l.totalKobo]), [
+    ["Shawarma + 1 Sausage", 2, 400_000], ["Delish Pack + 1 Kebab", 1, 220_000], ["Chips (Small)", 1, 170_000],
+  ]);
+  assert.ok(r.ok && r.payment.status === "verified" && r.payment.balanceAfterKobo === 210_000);
+  assert.equal(bot.walletKobo, 210_000);
+});
+
+test("every item is verified before anything goes in the cart", async () => {
+  const cases: [FakeOptions, CartLine[], string][] = [
+    [{}, [shawarma, delish, { ...chips, itemName: "Chips (Tiny)" }], "ITEM_NOT_FOUND"],
+    [{ priceOverride: { "Delish Pack + 1 Kebab": 250_000 } }, tray, "PRICE_CHANGED"],
+    [{}, [shawarma, { vendorName: "Waffledom", itemName: "Circle Waffle", expectedPriceKobo: 70_000 }], "VENDOR_CLOSED"],
+  ];
+  for (const [opts, lines, code] of cases) {
+    const bot = new FakePrime(opts);
+    const r = await runCartOrder(bot, lines);
+    assert.ok(!r.ok && r.code === code, `${code}: ${JSON.stringify(!r.ok && r.code)}`);
+    assert.ok(!r.ok && !r.cartTouched && bot.cart.length === 0, `${code}: cart untouched`);
+    assert.ok(!bot.clicks.some((c) => /add to cart/i.test(c)), `${code}: nothing added`);
+    assert.ok(!r.ok && r.item, `${code}: names the item it stopped on`);
+  }
+});
+
+test("the wallet must cover the whole tray before anything is added", async () => {
+  const bot = new FakePrime({ ...PAID, walletKobo: 500_000 });
+  const r = await runCartOrder(bot, tray);
+  assert.ok(!r.ok && r.code === "PRIME_WALLET_LOW" && !r.cartTouched, JSON.stringify(r));
+  assert.equal(!r.ok && r.topUp?.shortfallKobo, 290_000);
+  assert.equal(bot.cart.length, 0);
+});
+
+test("a cart whose total disagrees with the tray is not checked out", async () => {
+  const bot = new FakePrime({ ...PAID, cartTotalOverrideKobo: 800_000 });
+  const r = await runCartOrder(bot, tray);
+  assert.ok(!r.ok && r.code === "CART_MISMATCH" && r.cartTouched, JSON.stringify(r));
+  assert.ok(!bot.clicks.includes("Checkout"));
+});
+
+test("an empty tray or an absurd quantity is refused before Prime is touched", async () => {
+  for (const lines of [[], [{ ...shawarma, qty: 11 }], [{ ...shawarma, qty: 0 }]]) {
+    const bot = new FakePrime();
+    const r = await runCartOrder(bot, lines);
+    assert.ok(!r.ok && r.code === "INVALID_ORDER", JSON.stringify(r));
+    assert.equal(bot.clicks.length, 0);
+  }
+});
+
+test("the bot's tray (naira) becomes order lines (kobo); placeholders are refused, not guessed", async () => {
+  const good = trayToCartLines([
+    { itemName: "Shawarma + 1 Sausage", vendorName: "Slash Shawarma", price: 2000 },
+    { itemName: "Delish Pack + 1 Kebab", vendorName: "Delish Yamarita", price: 2200, location: "outside_cafeteria" },
+    { itemName: "Shawarma + 1 Sausage", vendorName: "Slash Shawarma", price: 2000 },
+  ]);
+  assert.ok(good.ok);
+  assert.equal(good.ok && good.totalKobo, 620_000);
+  assert.deepEqual(good.ok && good.lines.map((l) => [l.itemName, l.expectedPriceKobo, l.qty]), [["Shawarma + 1 Sausage", 200_000, 2], ["Delish Pack + 1 Kebab", 220_000, 1]]);
+  const r = await runCartOrder(new FakePrime(PAID), good.ok ? good.lines : []);
+  assert.ok(r.ok && r.payment.status === "verified", JSON.stringify(r));
+
+  // What the bot stores today when a suggestion has no vendor or price.
+  const bad = trayToCartLines([
+    { itemName: "Shawarma + 1 Sausage", vendorName: "Prime Vendor", price: 2000 },
+    { itemName: "Delish Pack + 1 Kebab", vendorName: "Delish Yamarita", price: 0 },
+  ]);
+  assert.ok(!bad.ok && bad.problems.length === 2, JSON.stringify(bad));
+  assert.ok(!trayToCartLines([]).ok);
 });
 
 test("a bot error mid-flow is a clean failure, not a throw", async () => {
