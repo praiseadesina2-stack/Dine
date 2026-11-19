@@ -186,23 +186,6 @@ export class DineOrderingAgent {
     }
   }
 
-  /**
-   * Who a Prime virtual account may belong to. Prime names each one after the customer's
-   * username, and every Dine order uses this one Prime account, so: PRIME_PAYEE_NAMES if
-   * set, else the Telegram username of Dine's ordering session. Empty means live payments
-   * are blocked.
-   */
-  private async allowedPayees(): Promise<string[]> {
-    const fromEnv = (process.env.PRIME_PAYEE_NAMES ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-    if (fromEnv.length) return fromEnv;
-    try {
-      const me: any = await (await this.getClient()).getMe();
-      return me?.username ? [String(me.username)] : [];
-    } catch {
-      return [];
-    }
-  }
-
   /** One Prime conversation at a time per Telegram session. */
   private async withSession<T>(work: () => Promise<T>): Promise<T> {
     const key = this.sessionString || "default";
@@ -230,8 +213,8 @@ export class DineOrderingAgent {
       return { success: false, code: "BOT_ERROR", stage: "start", cartTouched: false, message: `Could not reach Prime: ${err?.message ?? err}`, stepsCompleted: [] };
     }
     if (payWith === "wallet") return toAgentResult(await runCartOrder(bot, lines, { payWith }));
-    const allowedPayees = await this.allowedPayees();
-    const { order, payout } = await runOrderAndPay(bot, lines, { kora: this.kora, reference, confirmTimeoutMs, allowedPayees });
+    // Allowed payee: PRIME_PAYEE_NAMES, else "Prime <name>" read from Prime's greeting on this order.
+    const { order, payout } = await runOrderAndPay(bot, lines, { kora: this.kora, reference, confirmTimeoutMs });
     return { ...toAgentResult(order), reference, ...(payout ? { payout } : {}) };
   }
 }

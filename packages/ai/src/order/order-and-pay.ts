@@ -4,7 +4,7 @@
  * Prime makes a fresh virtual account for every checkout, so there is no account to pin:
  * the agent pays whichever account Prime shows on THIS checkout, straight away (virtual
  * accounts expire), and only after payPrimeTransfer's checks pass (amount = verified cart;
- * live: the bank says the account belongs to an allowed Prime payee, PRIME_PAYEE_NAMES).
+ * live: the bank says the account is "Prime <Dine's registered Prime name>", see payeesFor).
  *
  * Proof of payment is Prime's own "payment received" message in the chat after the
  * transfer, never Kora's word alone. Kora "sent" with no message from Prime is "uncertain".
@@ -26,7 +26,7 @@ export interface OrderAndPayOptions {
   kora: KoraPayouts;
   /** Unique per order, stored by the caller with the student's hold; used as the Kora reference. */
   reference: string;
-  /** Default PRIME_PAYEE_NAMES. */
+  /** Default payeesFor(): PRIME_PAYEE_NAMES, else "Prime <registered name>" from Prime's greeting. */
   allowedPayees?: string[];
   confirmTimeoutMs?: number;
 }
@@ -40,12 +40,25 @@ export interface OrderAndPayResult {
 
 const NAIRA = /₦\s*([\d,]+(?:\.\d{1,2})?)/;
 
+/**
+ * Who this checkout's virtual account may belong to. Prime names each one "Prime <the
+ * name the customer gave Prime>" ("Prime David"), and every Dine order uses the one
+ * Dine-owned Prime account. PRIME_PAYEE_NAMES overrides; otherwise "Prime <name>" from
+ * Prime's own greeting on this order. No name means live payments are blocked.
+ */
+export function payeesFor(primeCustomerName: string | undefined): string[] {
+  const fromEnv = (process.env.PRIME_PAYEE_NAMES ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (fromEnv.length) return fromEnv;
+  return primeCustomerName ? [`Prime ${primeCustomerName}`] : [];
+}
+
 export async function runOrderAndPay(bot: PrimeBot, lines: CartLine[], o: OrderAndPayOptions): Promise<OrderAndPayResult> {
   const order = await runCartOrder(bot, lines, { payWith: "transfer" });
   if (!order.ok || order.payment.status !== "awaiting_transfer" || !order.transfer) return { order };
 
   await bot.markChat?.();
-  const payout = await payPrimeTransfer({ kora: o.kora, transfer: order.transfer, totalKobo: order.totalKobo, reference: o.reference, allowedPayees: o.allowedPayees });
+  const allowedPayees = o.allowedPayees ?? payeesFor(order.primeCustomerName);
+  const payout = await payPrimeTransfer({ kora: o.kora, transfer: order.transfer, totalKobo: order.totalKobo, reference: o.reference, allowedPayees });
   const steps = [...order.steps, `payout ${payout.status}: ${payout.detail}`];
   const done = (status: PaymentEvidence["status"], detail: string): OrderAndPayResult => ({
     order: { ...order, steps: [...steps, `payment ${status}: ${detail}`], payment: { ...order.payment, status, detail } },

@@ -15,8 +15,9 @@
  * "simulated", never "sent". Prime is NOT paid in test mode; the student-facing `message`
  * still reads "Payment received, order has been confirmed" so testers see the real flow.
  *
- * Prime makes a new virtual account per checkout, named after the Prime customer's
- * username. All Dine orders use one Prime account, so the allowed payee is that username.
+ * Prime makes a new virtual account per checkout, named "Prime <the name the customer gave
+ * Prime>" ("Prime David"). All Dine orders use one Prime account, so the allowed payee is
+ * "Prime <Dine's registered name>" (order-and-pay.ts, payeesFor).
  */
 import type { BankTransfer } from "./prime-transfer.js";
 import type { KoraDisbursementPayload, KoraDisbursementResult, AccountResolveResult } from "../kora.js";

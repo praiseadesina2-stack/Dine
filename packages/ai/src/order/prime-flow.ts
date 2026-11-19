@@ -105,6 +105,11 @@ export type OrderFlowResult =
       payment: PaymentEvidence;
       /** Set when Prime asked for a bank transfer (payment "awaiting_transfer"): amount equals totalKobo. */
       transfer?: BankTransfer;
+      /**
+       * The name the Dine Prime account registered with, from Prime's greeting ("Hi mark! 👋").
+       * Prime names each checkout's virtual account after it ("Prime Mark").
+       */
+      primeCustomerName?: string;
       steps: string[];
     }
   | {
@@ -199,6 +204,8 @@ const PAYSTACK = /https?:\/\/(?:checkout\.)?paystack\.(?:com|co)\/\S+/i;
 const ORDER_REF = /order\s*(?:id|ref(?:erence)?|no\.?|number|#)\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{3,})/i;
 const CONFIRMED = /order\s+(?:has\s+been\s+|was\s+)?(?:placed|confirmed|received)/i;
 const EMPTY_CART = /nothing here yet/i;
+/** Prime's home greeting with the account's registered name: "Hi mark! 👋" (crawled 19 Oct). */
+const GREETING = /^\s*hi\s+([^!\n]+?)\s*!/im;
 
 /**
  * Checkout button labels to accept, exact after normalising. Prime's real labels are
@@ -383,6 +390,8 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     stage = "cart_check";
     const home = await bot.start();
     steps.push("sent /start");
+    const primeCustomerName = home.text.match(GREETING)?.[1]?.trim();
+    if (primeCustomerName) steps.push(`Prime account name: ${primeCustomerName}`);
     const cart = await press(home, "🛒 My Cart");
     if (!cart) return fail("UNEXPECTED_SCREEN", "home screen has no My Cart button");
     if (!EMPTY_CART.test(cart.text)) return fail("CART_NOT_EMPTY", "the Prime cart already has items; clear it before ordering");
@@ -492,7 +501,7 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
       }
       payment = { method: "bank_transfer", status: "awaiting_transfer", amountKobo: totalKobo, transfer, detail: `pay ₦${totalKobo / 100} to ${transfer.accountNumber} (${transfer.bankName}) with payPrimeTransfer()` };
       stage = "done";
-      return { ok: true, totalKobo, lines: added, ...(ref ? { orderRef: ref } : {}), payment, transfer, steps };
+      return { ok: true, totalKobo, lines: added, ...(ref ? { orderRef: ref } : {}), payment, transfer, ...(primeCustomerName ? { primeCustomerName } : {}), steps };
     }
 
     if (!walletBefore) {

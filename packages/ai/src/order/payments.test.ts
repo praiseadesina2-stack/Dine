@@ -10,7 +10,7 @@ import { runCartOrder, runOrderFlow, type OrderTarget } from "./prime-flow.js";
 import { parseBankTransfer } from "./prime-transfer.js";
 import { payeeAllowed, payPrimeTransfer, type KoraPayouts } from "./pay-transfer.js";
 import { similarity, suggestNames } from "./suggest.js";
-import { runOrderAndPay } from "./order-and-pay.js";
+import { payeesFor, runOrderAndPay } from "./order-and-pay.js";
 import { FakePrime } from "./sim-prime.js";
 import { WalletService } from "../wallet.js";
 import type { KoraDisbursementPayload } from "../kora.js";
@@ -137,10 +137,31 @@ test("test keys: the payout is simulated, never 'sent'; testers see the normal c
   assert.equal(sent.length, 1);
 });
 
-test("payee is the Prime customer's username (virtual accounts are named after it)", () => {
-  assert.ok(payeeAllowed("DINE_ORDERS", ["dine_orders"]));
-  assert.ok(payeeAllowed("Prime/dine_orders", ["dine_orders"]));
-  assert.ok(!payeeAllowed("tobi_eats", ["dine_orders"]));
+test("virtual accounts are 'Prime <registered name>': only Dine's own name is accepted", () => {
+  assert.deepEqual(payeesFor("mark"), process.env.PRIME_PAYEE_NAMES ? payeesFor("mark") : ["Prime mark"]);
+  assert.ok(payeeAllowed("PRIME MARK", ["Prime mark"]));
+  assert.ok(payeeAllowed("Prime Mark Okafor", ["Prime mark"]));
+  assert.ok(!payeeAllowed("PRIME DAVID", ["Prime mark"]), "another Prime customer's account");
+  assert.ok(!payeeAllowed("MARK", ["Prime mark"]), "not a Prime virtual account");
+});
+
+test("the agent reads Dine's registered Prime name from the greeting and pays only 'Prime <name>'", async () => {
+  const saved = process.env.PRIME_PAYEE_NAMES;
+  delete process.env.PRIME_PAYEE_NAMES;
+  try {
+    const opts = (resolvedName: string) => ({ kora: fakeKora({ resolvedName }).kora, reference: "g", confirmTimeoutMs: 10 });
+    const ours = await runOrderAndPay(new FakePrime({ ...checkoutTo("9479959026", "2,000", "Prime Mark"), paidMessage: "Payment received" }), [shawarma], opts("PRIME MARK"));
+    assert.ok(ours.order.ok && ours.order.primeCustomerName === "mark", "crawled home screen: 'Hi mark! 👋'");
+    assert.equal(ours.payout?.status, "sent", String(ours.payout?.detail));
+    assert.ok(ours.order.ok && ours.order.payment.status === "verified");
+
+    // Prime shows our name, but the bank says the account is someone else's: blocked.
+    const theirs = await runOrderAndPay(new FakePrime(checkoutTo("9479959026", "2,000", "Prime Mark")), [shawarma], opts("PRIME DAVID"));
+    assert.equal(theirs.payout?.status, "blocked");
+    assert.ok(theirs.order.ok && theirs.order.payment.status === "not_paid");
+  } finally {
+    if (saved !== undefined) process.env.PRIME_PAYEE_NAMES = saved;
+  }
 });
 
 test("live: sent only after amount, payee, bank and account-holder checks pass", async () => {
@@ -192,9 +213,9 @@ test("payee matching needs every word of an allowed name", () => {
 
 // ---------------------------------------------------------------- the agent orders AND pays
 
-const checkoutTo = (account: string, naira = "2,000") => ({
+const checkoutTo = (account: string, naira = "2,000", name = "Prime That") => ({
   cartButtons: ["Checkout"],
-  checkoutReply: { text: `Send ₦${naira} to:\nAccount number: ${account}\nBank: Flutterwave MFB\nName: Prime That`, buttons: [] },
+  checkoutReply: { text: `Send ₦${naira} to:\nAccount number: ${account}\nBank: Flutterwave MFB\nName: ${name}`, buttons: [] },
 });
 const orderAndPay = (bot: FakePrime, kora: KoraPayouts, reference = "ord_9") =>
   runOrderAndPay(bot, [shawarma], { kora, reference, allowedPayees: ["Prime That"], confirmTimeoutMs: 10 });
