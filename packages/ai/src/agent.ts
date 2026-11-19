@@ -154,8 +154,8 @@ export class DineOrderingAgent {
    *    Kora, then waits for Prime's "payment received". `reference` should be the
    *    student's hold reference (one is made if omitted; it comes back on the result).
    *  - "wallet": pays from the Prime wallet float.
-   * Then act on result.payment.status: verified → capture; not_paid / simulated → release;
-   * uncertain → hold and reconcile.
+   * Then act on result.payment.status: verified or simulated (test keys) → capture;
+   * not_paid → release; uncertain → hold and reconcile.
    */
   public async placeTrayOrder(lines: CartLine[], botUsername?: string, opts: { payWith?: PayWith; reference?: string; confirmTimeoutMs?: number } = {}): Promise<AgentOrderResult> {
     const payWith = opts.payWith ?? payModeFromEnv();

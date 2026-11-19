@@ -88,7 +88,7 @@ export type PaymentStatus =
    * (`transfer`). Nothing is paid yet: the backend pays it with payPrimeTransfer().
    */
   | "awaiting_transfer"
-  /** Kora test keys: the transfer went to Kora's sandbox. Prime was NOT paid. Release the student's hold. */
+  /** Kora test keys: the payout ran in Kora's sandbox. The demo treats it like "verified": capture the student's hold. */
   | "simulated";
 
 export interface PaymentEvidence {

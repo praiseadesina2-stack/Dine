@@ -98,8 +98,9 @@ if (!result.success) {
 }
 
 switch (result.payment?.status) {
-  case "verified":  await walletService.capture(ref); break;                       // Prime confirmed the payment
-  case "simulated": await walletService.release(ref, "test mode: Prime not paid"); break;
+  case "verified":                                                                  // Prime confirmed the payment
+  case "simulated": await walletService.capture(ref); break;                        // test keys: taken from the wallet exactly as a real order
+
   case "not_paid":  await walletService.release(ref, result.payment.detail); break; // a check blocked it, or Kora refused
   default: break; // "uncertain": keep the hold, alert an operator, reconcile with koraService.verifyPayout(ref); never order or pay again for this ref
 }
@@ -109,7 +110,7 @@ await ctx.reply(result.payout?.message ?? result.message); // "Payment received,
 
 Do **not** call `koraService.disburse` (or `payPrimeTransfer`) for an order: the agent has already paid, so that would pay Prime twice. `result.bankPaymentDetails` is no longer set for the same reason.
 
-In test mode the hold is released after a `simulated` payment so test balances are not spent on orders Prime never received. Change that only once a real payment has been confirmed end to end.
+The demo mimics the real system: with Kora test keys the student's wallet (funded with test cards) is charged and they see "Payment received, order has been confirmed", exactly as in production. Only `payment.status` (`simulated`) and the logs record that Kora ran the payout in its sandbox.
 
 What the tray must keep for each item: the exact Prime `vendorName` and item name (`MealSuggestion.vendorName`, `MealSuggestion.items[].name`), the item price in naira (`items[].price`), and `MealSuggestion.location` (optional, makes the search faster). `trayToCartLines` refuses an item with no vendor, the placeholder vendor `"Prime Vendor"`, or no price, rather than guessing. Hall and room are not inputs: Prime delivers to the Dine account's profile (guarantee 9).
 
@@ -131,7 +132,7 @@ After Kora accepts the payout, the agent watches Prime's chat (messages after th
 | `result.payment.status` | Means | Backend does |
 |---|---|---|
 | `verified` | Kora sent it **and** Prime confirmed payment in its chat (amount matching, if shown) | Capture |
-| `simulated` | Test keys: Kora's sandbox took it. **No money moved; Prime was not paid.** The student still sees "Payment received, order has been confirmed" so testers get the real flow | Release (never capture a `simulated` payment) |
+| `simulated` | Test keys: Kora's sandbox took it. **No money moved; Prime was not paid.** The student sees "Payment received, order has been confirmed", as in production | Capture, as for `verified` (the demo charges the test-card-funded wallet like the real system) |
 | `not_paid` | A check blocked it before Kora (`payout.status: "blocked"`), or Kora refused (`"failed"`) | Release; alert an operator if the payee or bank check blocked it; the unpaid Prime order must be cleared |
 | `uncertain` | Kora's reply was unclear, or Kora sent it but Prime did not confirm in time (or confirmed another amount) | **Hold**; reconcile with `koraService.verifyPayout(result.reference)` and Prime; never pay again for this order |
 
