@@ -67,8 +67,16 @@ export interface NoteConstraints {
 }
 
 export const EMPTY_NOTE: NoteConstraints = {
-  excludeAllergens: [], excludeComponents: [], excludeVendors: [], excludePrep: [], preferComponents: [], preferVendors: [],
-  vegetarian: false, noPork: false, unhandled: [], parsedBy: "none",
+  excludeAllergens: [],
+  excludeComponents: [],
+  excludeVendors: [],
+  excludePrep: [],
+  preferComponents: [],
+  preferVendors: [],
+  vegetarian: false,
+  noPork: false,
+  unhandled: [],
+  parsedBy: "none",
 };
 
 export interface MealSuggestion {

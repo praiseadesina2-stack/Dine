@@ -14,12 +14,19 @@
  * match, never a "close enough" one; anything unexpected stops the order with a code.
  * Nothing here is a model.
  *
- * Payment (order/prime-wallet.ts): the order is paid from the Dine-owned Prime account's
- * wallet. The flow reads the wallet before ordering (stops with PRIME_WALLET_LOW, cart
- * untouched, if it cannot cover the total) and again after checkout; only an exact drop
- * by the order total counts as paid.
+ * Payment, two ways (`payWith`); whichever Prime's checkout actually asks for wins:
+ *  - "wallet" (order/prime-wallet.ts): paid from the Dine-owned Prime account's wallet.
+ *    The flow reads the wallet before ordering (stops with PRIME_WALLET_LOW, cart
+ *    untouched, if it cannot cover the total) and again after checkout; only an exact
+ *    drop by the order total counts as paid.
+ *  - "transfer" (order/prime-transfer.ts): Prime's checkout asks for a bank transfer.
+ *    The flow returns the transfer details with payment "awaiting_transfer", but only
+ *    when Prime asks for exactly the verified cart total (else TRANSFER_MISMATCH). The
+ *    backend pays it with payPrimeTransfer() (order/pay-transfer.ts).
  */
 import { judgePayment, readPrimeWallet, WALLET_PAY_LABELS, type FundingAccount, type PaymentEvidence, type PrimeWallet } from "./prime-wallet.js";
+import { parseBankTransfer, type BankTransfer } from "./prime-transfer.js";
+import { suggestNames } from "./suggest.js";
 
 export interface BotButton {
   row: number;
@@ -65,8 +72,13 @@ export type OrderFailure =
   | "CHECKOUT_UNMAPPED"
   | "INVALID_ORDER"
   | "PRIME_WALLET_LOW"
+  /** Prime's checkout asked for a bank transfer of a different amount than the verified cart. Nothing paid. */
+  | "TRANSFER_MISMATCH"
   | "UNEXPECTED_SCREEN"
   | "BOT_ERROR";
+
+/** How Dine pays Prime: from the Prime wallet float, or by a bank transfer per order. */
+export type PayWith = "wallet" | "transfer";
 
 /** PRIME_WALLET_LOW: how much the backend must top up, and where to send it. */
 export type TopUp = { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount };
@@ -81,8 +93,14 @@ export type OrderFlowResult =
       paystackUrl?: string;
       /** Prime's order reference, when its confirmation shows one. */
       orderRef?: string;
-      /** How the order was paid, proven by the Prime wallet balance. Capture the student's reservation only on "verified". */
+      /**
+       * How the order was paid. Wallet: proven by the Prime wallet balance; capture the
+       * student's reservation only on "verified". Transfer: "awaiting_transfer", pay it
+       * with payPrimeTransfer() and act on that result.
+       */
       payment: PaymentEvidence;
+      /** Set when Prime asked for a bank transfer (payment "awaiting_transfer"): amount equals totalKobo. */
+      transfer?: BankTransfer;
       steps: string[];
     }
   | {
@@ -100,6 +118,8 @@ export type OrderFlowResult =
       item?: { vendorName: string; itemName: string };
       /** Set when checkout was pressed: what the wallet shows about payment. "uncertain" means reconcile before any retry. */
       payment?: PaymentEvidence;
+      /** VENDOR_NOT_FOUND / ITEM_NOT_FOUND: similar names Prime showed, for "Did you mean…?". Never ordered automatically. */
+      suggestions?: string[];
       steps: string[];
     };
 
@@ -227,8 +247,13 @@ function qtyPlusButton(screen: BotScreen): BotButton | undefined {
 }
 
 /** One item, kept for callers that order a single meal. */
-export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<OrderFlowResult> {
-  return runCartOrder(bot, [target]);
+export async function runOrderFlow(bot: PrimeBot, target: OrderTarget, opts: CartOrderOptions = {}): Promise<OrderFlowResult> {
+  return runCartOrder(bot, [target], opts);
+}
+
+export interface CartOrderOptions {
+  /** Default "wallet". "transfer" skips the Prime wallet reads and expects Prime to ask for a bank transfer. */
+  payWith?: PayWith;
 }
 
 /**
@@ -240,8 +265,11 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget): Promise<
  *   4. Add every line, setting its quantity with "+", re-checking price and total.
  *   5. The cart must show every item (and Prime's total, when it shows one).
  *   6. Check out once; pay from the wallet; prove payment by the wallet balance.
+ *      Or, when Prime asks for a bank transfer, return it (amount must equal the cart).
+ * With payWith "transfer", steps 1 and 3 skip the Prime wallet.
  */
-export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<OrderFlowResult> {
+export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOrderOptions = {}): Promise<OrderFlowResult> {
+  const payWith: PayWith = opts.payWith ?? "wallet";
   const steps: string[] = [];
   let stage: OrderStage = "start";
   let cartTouched = false;
@@ -250,7 +278,7 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
   let current: CartLine | undefined;
   /** Set once checkout is pressed: from then on money may have moved. */
   let paymentPending: { amountKobo: number; balanceBeforeKobo: number } | undefined;
-  const fail = (code: OrderFailure, detail: string, extra: { topUp?: TopUp } = {}): OrderFlowResult => ({
+  const fail = (code: OrderFailure, detail: string, extra: { topUp?: TopUp; suggestions?: string[] } = {}): OrderFlowResult => ({
     ok: false, code, stage, detail, cartTouched,
     ...(totalKobo != null ? { totalKobo } : {}),
     ...(payment ? { payment } : {}),
@@ -271,11 +299,20 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
       current = l;
       return fail("INVALID_ORDER", `quantity ${l.qty} for ${l.itemName} is not between 1 and ${MAX_QTY}`);
     }
+    if (!Number.isInteger(l.expectedPriceKobo) || l.expectedPriceKobo <= 0) {
+      current = l;
+      return fail("INVALID_ORDER", `${l.itemName} has no approved price (expectedPriceKobo, in kobo); the order is refused rather than paid at whatever Prime shows`);
+    }
   }
+  /** Labels seen while searching, for "Did you mean…?" when nothing matched exactly. */
+  let vendorLabels: string[] = [];
+  let itemLabels: string[] = [];
 
   /** Home → vendor → item screen for `line`, checked against what the student approved. */
   const openItem = async (line: CartLine): Promise<{ item: BotScreen; parsed: ItemScreen } | OrderFlowResult> => {
     current = line;
+    vendorLabels = [];
+    itemLabels = [];
     stage = "locations";
     const home = await bot.start();
     steps.push("sent /start");
@@ -292,6 +329,7 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
       let list: BotScreen | null = await bot.click(locations, groupButton);
       for (let page = 0; list && page < MAX_PAGES; page++) {
         if (vendorStatus(list.text, line.vendorName) === "closed") return fail("VENDOR_CLOSED", `${line.vendorName} is closed on Prime`);
+        vendorLabels.push(...list.buttons.map((b) => b.label));
         menu = await press(list, line.vendorName, "vendor");
         if (menu) break;
         list = await press(list, "Next ▶", "next page");
@@ -302,18 +340,25 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
         locations = (await press(back, "I'm Hungry 🍽️")) ?? (await press(back, "🍽 See all vendors")) ?? locations;
       }
     }
-    if (!menu) return fail("VENDOR_NOT_FOUND", `no vendor button named exactly "${line.vendorName}"`);
+    if (!menu) {
+      const suggestions = suggestNames(line.vendorName, vendorLabels);
+      return fail("VENDOR_NOT_FOUND", `no vendor button named exactly "${line.vendorName}"`, suggestions.length ? { suggestions } : {});
+    }
 
     stage = "vendor_menu";
     const status = vendorStatus(menu.text, line.vendorName);
     if (status !== "active") return fail(status === "closed" ? "VENDOR_CLOSED" : "UNEXPECTED_SCREEN", `vendor menu shows ${line.vendorName} as ${status}`);
     let item: BotScreen | null = null;
     for (let page = 0, screen: BotScreen | null = menu; screen && page < MAX_PAGES; page++) {
+      itemLabels.push(...screen.buttons.map((b) => b.label.replace(/^\s*choose\s+/i, "")));
       item = await press(screen, `Choose ${line.itemName}`, "item");
       if (item) break;
       screen = await press(screen, "Next ▶", "next page");
     }
-    if (!item) return fail("ITEM_NOT_FOUND", `no button "Choose ${line.itemName}" on ${line.vendorName}'s menu`);
+    if (!item) {
+      const suggestions = suggestNames(line.itemName, itemLabels);
+      return fail("ITEM_NOT_FOUND", `no button "Choose ${line.itemName}" on ${line.vendorName}'s menu`, suggestions.length ? { suggestions } : {});
+    }
 
     stage = "item";
     const parsed = parseItemScreen(item.text);
@@ -338,13 +383,15 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
     if (!cart) return fail("UNEXPECTED_SCREEN", "home screen has no My Cart button");
     if (!EMPTY_CART.test(cart.text)) return fail("CART_NOT_EMPTY", "the Prime cart already has items; clear it before ordering");
 
-    let walletBefore: PrimeWallet;
-    try {
-      walletBefore = await readPrimeWallet(bot);
-    } catch (err: any) {
-      return fail("UNEXPECTED_SCREEN", `Prime wallet: ${err?.message ?? err}`);
+    let walletBefore: PrimeWallet | undefined;
+    if (payWith === "wallet") {
+      try {
+        walletBefore = await readPrimeWallet(bot);
+      } catch (err: any) {
+        return fail("UNEXPECTED_SCREEN", `Prime wallet: ${err?.message ?? err}`);
+      }
+      steps.push(`read Prime wallet: ₦${walletBefore.balanceKobo / 100}`);
     }
-    steps.push(`read Prime wallet: ₦${walletBefore.balanceKobo / 100}`);
 
     // 2. Verify every line before touching the cart.
     let estimateKobo = 0;
@@ -360,14 +407,14 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
 
     // 3. The wallet must cover the whole tray.
     stage = "wallet_check";
-    const topUpFor = (needKobo: number): TopUp => ({
-      shortfallKobo: needKobo - walletBefore.balanceKobo,
-      balanceKobo: walletBefore.balanceKobo,
-      ...(walletBefore.fundingAccount ? { fundingAccount: walletBefore.fundingAccount } : {}),
+    const topUpFor = (w: PrimeWallet, needKobo: number): TopUp => ({
+      shortfallKobo: needKobo - w.balanceKobo,
+      balanceKobo: w.balanceKobo,
+      ...(w.fundingAccount ? { fundingAccount: w.fundingAccount } : {}),
     });
     totalKobo = estimateKobo;
-    if (walletBefore.balanceKobo < estimateKobo) {
-      return fail("PRIME_WALLET_LOW", `Prime wallet has ₦${walletBefore.balanceKobo / 100}, the tray needs ₦${estimateKobo / 100}`, { topUp: topUpFor(estimateKobo) });
+    if (walletBefore && walletBefore.balanceKobo < estimateKobo) {
+      return fail("PRIME_WALLET_LOW", `Prime wallet has ₦${walletBefore.balanceKobo / 100}, the tray needs ₦${estimateKobo / 100}`, { topUp: topUpFor(walletBefore, estimateKobo) });
     }
 
     // 4. Add every line at its quantity.
@@ -400,8 +447,8 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
     }
     current = undefined;
     totalKobo = added.reduce((sum, l) => sum + l.totalKobo, 0);
-    if (walletBefore.balanceKobo < totalKobo) {
-      return fail("PRIME_WALLET_LOW", `Prime's cart came to ₦${totalKobo / 100}, more than the ₦${walletBefore.balanceKobo / 100} in the wallet`, { topUp: topUpFor(totalKobo) });
+    if (walletBefore && walletBefore.balanceKobo < totalKobo) {
+      return fail("PRIME_WALLET_LOW", `Prime's cart came to ₦${totalKobo / 100}, more than the ₦${walletBefore.balanceKobo / 100} in the wallet`, { topUp: topUpFor(walletBefore, totalKobo) });
     }
 
     // 5. The cart shows exactly this tray.
@@ -418,16 +465,50 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
       return fail("CART_MISMATCH", `Prime's cart total is ₦${kobo(shownTotal[1]) / 100}, the tray is ₦${totalKobo / 100}`);
     }
 
-    // 6. One checkout, paid from the Prime wallet.
+    // 6. One checkout.
     stage = "checkout";
     const checkoutLabel = CHECKOUT_LABELS.find((l) => exactButton(filled, l));
     if (!checkoutLabel) {
       return fail("CHECKOUT_UNMAPPED", `no known checkout button on the cart screen (buttons: ${filled.buttons.map((b) => b.label).join(", ")})`);
     }
-    paymentPending = { amountKobo: totalKobo, balanceBeforeKobo: walletBefore.balanceKobo };
+    if (walletBefore) paymentPending = { amountKobo: totalKobo, balanceBeforeKobo: walletBefore.balanceKobo };
     let after = await press(filled, checkoutLabel, "checkout");
     if (!after) return fail("BOT_ERROR", "checkout button could not be pressed");
-    // Prime may ask how to pay: always the wallet, never a card or another method.
+    const ref = after.text.match(ORDER_REF)?.[1];
+
+    // Prime asks for a bank transfer: hand it to the backend, never pay it here. Prime's
+    // amount must be exactly the cart that was verified line by line.
+    const transfer = parseBankTransfer(after.text);
+    if (transfer) {
+      paymentPending = undefined; // nothing moves at checkout on this path
+      steps.push(`Prime asks for a transfer of ₦${transfer.amountKobo / 100} to ${transfer.accountNumber} (${transfer.bankName})`);
+      if (transfer.amountKobo !== totalKobo) {
+        payment = { method: "bank_transfer", status: "not_paid", amountKobo: totalKobo, transfer, detail: `Prime asks for ₦${transfer.amountKobo / 100}, the verified cart is ₦${totalKobo / 100}; nothing paid` };
+        return fail("TRANSFER_MISMATCH", payment.detail);
+      }
+      payment = { method: "bank_transfer", status: "awaiting_transfer", amountKobo: totalKobo, transfer, detail: `pay ₦${totalKobo / 100} to ${transfer.accountNumber} (${transfer.bankName}) with payPrimeTransfer()` };
+      stage = "done";
+      return { ok: true, totalKobo, lines: added, ...(ref ? { orderRef: ref } : {}), payment, transfer, steps };
+    }
+
+    if (!walletBefore) {
+      // Transfer mode, but Prime did not ask for a transfer. Its wallet was not read, so
+      // nothing can be proven about it: never press a wallet-pay button here.
+      const url = after.text.match(PAYSTACK)?.[0] ?? after.buttons.find((b) => b.url && PAYSTACK.test(b.url))?.url;
+      if (url) {
+        payment = { method: "paystack_link", status: "not_paid", amountKobo: totalKobo, detail: "Prime returned a Paystack link, not transfer details" };
+        stage = "done";
+        return { ok: true, totalKobo, lines: added, paystackUrl: url, ...(ref ? { orderRef: ref } : {}), payment, steps };
+      }
+      if (CONFIRMED.test(after.text)) {
+        payment = { method: "prime_wallet", status: "uncertain", amountKobo: totalKobo, detail: "Prime confirmed without asking for a transfer; it may have charged the Prime wallet. Reconcile before any retry" };
+        stage = "done";
+        return { ok: true, totalKobo, lines: added, ...(ref ? { orderRef: ref } : {}), payment, steps };
+      }
+      return fail("CHECKOUT_UNMAPPED", `after checkout Prime showed no transfer details (buttons: ${after.buttons.map((b) => b.label).join(", ")})`);
+    }
+
+    // Wallet: Prime may ask how to pay: always the wallet, never a card or another method.
     const payLabel = WALLET_PAY_LABELS.find((l) => exactButton(after!, l));
     let paidWithWallet = false;
     if (payLabel) {
@@ -437,7 +518,7 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
       paidWithWallet = true;
     }
     const url = after.text.match(PAYSTACK)?.[0] ?? after.buttons.find((b) => b.url && PAYSTACK.test(b.url))?.url;
-    const ref = after.text.match(ORDER_REF)?.[1];
+    const paidRef = after.text.match(ORDER_REF)?.[1];
 
     // Proof of payment: the wallet balance, not the checkout message.
     let afterKobo: number | undefined;
@@ -459,7 +540,7 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[]): Promise<Ord
     if (!url && !CONFIRMED.test(after.text)) return fail("UNEXPECTED_SCREEN", "checkout gave neither a payment link nor an order confirmation");
 
     stage = "done";
-    return { ok: true, totalKobo, lines: added, ...(url ? { paystackUrl: url } : {}), ...(ref ? { orderRef: ref } : {}), payment, steps };
+    return { ok: true, totalKobo, lines: added, ...(url ? { paystackUrl: url } : {}), ...(paidRef ? { orderRef: paidRef } : {}), payment, steps };
   } catch (err: any) {
     if (paymentPending && !payment) {
       payment = { method: "prime_wallet", status: "uncertain", ...paymentPending, detail: "Prime stopped replying after checkout; reconcile the wallet before any retry" };

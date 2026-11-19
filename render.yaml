@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: dine-bot
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 3000

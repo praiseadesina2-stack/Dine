@@ -88,12 +88,13 @@ function score(meal: Pick<Meal, "key" | "total" | "profile" | "vendor">, ctx: Ct
   const p = meal.profile;
   const reasons: string[] = [];
   let v = 0;
+  const P = Math.round(p.proteinG), K = Math.round(p.kcal);
 
   for (const g of ctx.goals) {
     switch (g) {
       case "protein_rich":
         v += 3 * sat(p.proteinG, 45) - (p.proteinG < 15 ? 1 : 0);
-        if (p.proteinG >= 30) reasons.push("High in protein");
+        if (p.proteinG >= 30) reasons.push(`High in protein (est. ~${P} g)`);
         break;
       case "high_fibre": {
         const density = p.kcal ? (p.fibreG / p.kcal) * 1000 : 0;
@@ -108,11 +109,11 @@ function score(meal: Pick<Meal, "key" | "total" | "profile" | "vendor">, ctx: Ct
         break;
       case "light":
         v += 2 * (1 - sat(p.kcal, 900)) + 0.6 * sat(p.proteinG, 30);
-        if (p.kcal <= 550) reasons.push("Lighter meal");
+        if (p.kcal <= 550) reasons.push(`Lighter meal (est. ~${K} kcal)`);
         break;
       case "bulk":
         v += 2 * sat(p.kcal, 1100) + sat(p.proteinG, 50);
-        if (p.kcal >= 850) reasons.push("Big, calorie-dense plate");
+        if (p.kcal >= 850) reasons.push(`Big, calorie-dense plate (est. ~${K} kcal)`);
         break;
     }
   }
@@ -415,6 +416,9 @@ export function runEngine(req: RecommendRequest, note: NoteConstraints, opts: En
     ...(opts.primeOnly ? [] : buildCampusMeals(ctx, prices)),
     ...(withPrime ? buildPrimeMeals(menu, ctx, isOpen, opts.maxExtras) : []),
   ];
+  const finish = (_shown: Meal[]) => {
+    notices.push("Nutrition figures are rough estimates.");
+  };
 
   if (req.mode === "now") {
     const hour = lagosHour(opts.now ?? new Date());
@@ -425,6 +429,7 @@ export function runEngine(req: RecommendRequest, note: NoteConstraints, opts: En
     const prime = suitablePrime(ranked);
     if (prime && !chosen.some((m) => m.source === "prime")) chosen = [...chosen.slice(0, 2), prime];
     if (chosen.length === 0) notices.push(`Nothing fits ${naira(base.budget)} with these choices. Try a higher budget or fewer restrictions.`);
+    finish(chosen);
     return { mode: "now", options: chosen.map((m) => toSuggestion(m, ctx)), note, notices, menuAsOf };
   }
 
@@ -436,6 +441,7 @@ export function runEngine(req: RecommendRequest, note: NoteConstraints, opts: En
   const used = new Map<string, number>();
   const groupUse = new Map<string, number>();
   let prevFamily: string | undefined;
+  const shown: Meal[] = [];
   const plan: { day: Day; meals: TimetableMeal[] }[] = [];
   let empty = 0;
 
@@ -466,11 +472,13 @@ export function runEngine(req: RecommendRequest, note: NoteConstraints, opts: En
       today.groups.add(pick.group);
       today.families.add(pick.family);
       prevFamily = pick.family;
+      shown.push(...order);
       meals.push({ slot, pick: toSuggestion(pick, ctx), alternatives: rest.map((m) => toSuggestion(m, ctx)) });
     }
     plan.push({ day, meals });
   }
   if (empty) notices.push(`${empty} meal(s) could not be filled within ${naira(base.budget)} and your preferences.`);
+  finish(shown);
   return { mode: "timetable", days: plan, note, notices, menuAsOf };
 }
 

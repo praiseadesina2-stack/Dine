@@ -63,6 +63,7 @@ async function main() {
   const now = at ? new Date(`2026-11-10T${at.padStart(5, "0")}:00+01:00`) : undefined;
   const result = await recommend(req, { useModel: !argv.includes("--no-model"), now });
   if (argv.includes("--json")) return console.log(JSON.stringify(result, null, 2));
+  if (result.note.parsedBy !== "none") console.log("Note understood as:", JSON.stringify(result.note), "\n");
   printRequest();
   if (result.mode === "now") result.options.forEach((o, i) => console.log(`${i + 1}.\n${fmt(o)}\n`));
   else

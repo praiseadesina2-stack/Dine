@@ -14,9 +14,10 @@ import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import {
   runCartOrder,
-  type BotButton, type BotScreen, type CartLine, type OrderFailure, type OrderFlowResult, type OrderStage, type OrderTarget as FlowTarget, type PrimeBot, type VerifiedLine,
+  type BotButton, type BotScreen, type CartLine, type OrderFailure, type OrderFlowResult, type OrderStage, type OrderTarget as FlowTarget, type PayWith, type PrimeBot, type VerifiedLine,
 } from "./order/prime-flow.js";
 import { judgeTopUp, readPrimeWallet, type FundingAccount, type PaymentEvidence, type PrimeWallet, type TopUpCheck } from "./order/prime-wallet.js";
+import type { BankTransfer } from "./order/prime-transfer.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +27,23 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 export interface OrderTarget extends FlowTarget {
   botUsername?: string; // defaults to process.env.PRIME_BOT_USERNAME || "orderfromprimebot"
+  /** Ignored: Prime delivers to the Dine account's profile (ordering.md guarantee 9). Kept so older callers compile. */
+  hall?: string;
+  /** Ignored, as `hall`. */
+  room?: string;
+}
+
+/** Older shape of Prime's transfer details (amount in naira). Prefer `transfer` + payPrimeTransfer(). */
+export interface BankPaymentDetails {
+  accountNumber: string;
+  bankName: string;
+  accountName: string;
+  amount: number;
+}
+
+/** PRIME_PAY_MODE: "wallet" (Prime wallet float) or "transfer" (bank transfer per order, the default). */
+function payModeFromEnv(): PayWith {
+  return process.env.PRIME_PAY_MODE === "wallet" ? "wallet" : "transfer";
 }
 
 export interface AgentOrderResult {
@@ -52,6 +70,15 @@ export interface AgentOrderResult {
    * reconcile before any retry; on "not_paid", release it.
    */
   payment?: PaymentEvidence;
+  /**
+   * Prime asked for a bank transfer of exactly totalKobo (payment.status "awaiting_transfer").
+   * Pay it with payPrimeTransfer({ kora, transfer, totalKobo, reference }); never directly.
+   */
+  transfer?: BankTransfer;
+  /** Same as `transfer`, in the older naira shape. */
+  bankPaymentDetails?: BankPaymentDetails;
+  /** VENDOR_NOT_FOUND / ITEM_NOT_FOUND: similar names on Prime, for "Did you mean…?". Never ordered automatically. */
+  suggestions?: string[];
   /** PRIME_WALLET_LOW only: top the Prime wallet up by at least shortfallKobo, then retry. */
   topUp?: { shortfallKobo: number; balanceKobo: number; fundingAccount?: FundingAccount };
   stepsCompleted: string[];
@@ -102,17 +129,20 @@ export class DineOrderingAgent {
 
   /** Places one item on Prime. Same as placeTrayOrder with a one-line tray. */
   public async placeOrder(target: OrderTarget): Promise<AgentOrderResult> {
-    return this.placeTrayOrder([target], target.botUsername);
+    const { botUsername, hall: _hall, room: _room, ...line } = target;
+    return this.placeTrayOrder([line], botUsername);
   }
 
   /**
    * Orders a whole tray from Prime: every line (any vendors) in ONE Prime cart, ONE
-   * checkout, paid from the Prime wallet. Every item is checked before anything goes in
-   * the cart. Queues behind any order already running on this session.
-   * Build `lines` from the bot's tray with trayToCartLines().
+   * checkout. Every item is checked before anything goes in the cart. Queues behind any
+   * order already running on this session. Build `lines` with trayToCartLines().
+   * Payment follows PRIME_PAY_MODE unless `payWith` is given: "transfer" returns
+   * `transfer` for payPrimeTransfer(); "wallet" pays from the Prime wallet float.
    */
-  public async placeTrayOrder(lines: CartLine[], botUsername?: string): Promise<AgentOrderResult> {
-    return this.withSession(() => this.placeTrayOrderNow(lines, botUsername));
+  public async placeTrayOrder(lines: CartLine[], botUsername?: string, opts: { payWith?: PayWith } = {}): Promise<AgentOrderResult> {
+    const payWith = opts.payWith ?? payModeFromEnv();
+    return this.withSession(() => this.placeTrayOrderNow(lines, botUsername, payWith));
   }
 
   /**
@@ -157,14 +187,14 @@ export class DineOrderingAgent {
     return new TelegramPrimeBot(client, await client.getEntity(username));
   }
 
-  private async placeTrayOrderNow(lines: CartLine[], botUsername?: string): Promise<AgentOrderResult> {
+  private async placeTrayOrderNow(lines: CartLine[], botUsername: string | undefined, payWith: PayWith): Promise<AgentOrderResult> {
     let bot: PrimeBot;
     try {
       bot = await this.primeBot(botUsername);
     } catch (err: any) {
       return { success: false, code: "BOT_ERROR", stage: "start", cartTouched: false, message: `Could not reach Prime: ${err?.message ?? err}`, stepsCompleted: [] };
     }
-    return toAgentResult(await runCartOrder(bot, lines));
+    return toAgentResult(await runCartOrder(bot, lines, { payWith }));
   }
 }
 
@@ -177,6 +207,7 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
       cartTouched: true,
       message:
         r.payment.status === "verified" ? "Order placed on Prime and paid from the Prime wallet."
+        : r.payment.status === "awaiting_transfer" ? "Order placed on Prime; waiting for the bank transfer."
         : r.payment.status === "uncertain" ? "Order placed on Prime; payment is uncertain, reconcile before any retry."
         : r.paystackUrl ? "Order placed on Prime; not paid yet, Prime returned a checkout link."
         : "Order placed on Prime; not paid yet.",
@@ -185,6 +216,12 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
       paystackUrl: r.paystackUrl,
       orderRef: r.orderRef,
       payment: r.payment,
+      ...(r.transfer
+        ? {
+            transfer: r.transfer,
+            bankPaymentDetails: { accountNumber: r.transfer.accountNumber, bankName: r.transfer.bankName, accountName: r.transfer.accountName ?? "", amount: r.transfer.amountKobo / 100 },
+          }
+        : {}),
       stepsCompleted: r.steps,
     };
   }
@@ -197,6 +234,7 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
     totalKobo: r.totalKobo,
     ...(r.item ? { item: r.item } : {}),
     ...(r.payment ? { payment: r.payment } : {}),
+    ...(r.suggestions ? { suggestions: r.suggestions } : {}),
     ...(r.topUp ? { topUp: r.topUp } : {}),
     stepsCompleted: r.steps,
   };

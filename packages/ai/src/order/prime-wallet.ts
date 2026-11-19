@@ -16,6 +16,7 @@
  * proves the payment by reading the balance before and after. Nothing here is a model.
  */
 import { exactButton, type BotScreen, type PrimeBot } from "./prime-flow.js";
+import type { BankTransfer } from "./prime-transfer.js";
 
 export interface FundingAccount {
   accountNumber: string;
@@ -78,13 +79,21 @@ export type PaymentStatus =
   /** The wallet did not move: nothing was paid (e.g. Prime returned a Paystack link instead). */
   | "not_paid"
   /** The wallet moved by some other amount, or could not be read after checkout. Reconcile before any retry. */
-  | "uncertain";
+  | "uncertain"
+  /**
+   * Prime placed the order and asked for a bank transfer of exactly the order total
+   * (`transfer`). Nothing is paid yet: the backend pays it with payPrimeTransfer().
+   */
+  | "awaiting_transfer";
 
 export interface PaymentEvidence {
-  method: "prime_wallet" | "paystack_link";
+  method: "prime_wallet" | "paystack_link" | "bank_transfer";
   status: PaymentStatus;
   amountKobo: number;
-  balanceBeforeKobo: number;
+  /** Wallet payments only: the Prime wallet before checkout. */
+  balanceBeforeKobo?: number;
+  /** bank_transfer only: where Prime asked the money to go. */
+  transfer?: BankTransfer;
   /** Absent when the wallet could not be read after checkout (status is then "uncertain"). */
   balanceAfterKobo?: number;
   detail: string;

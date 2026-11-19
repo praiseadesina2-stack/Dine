@@ -18,3 +18,21 @@ export async function recommend(req: RecommendRequest, opts: RecommendOptions = 
   const note = await parseNote(req.note, opts);
   return runEngine(req, note, opts);
 }
+
+/**
+ * Convenience alias for timetable recommendations covering a full week or set of days.
+ */
+export async function planWeek(
+  req: Omit<RecommendRequest, "mode"> & { mode?: "timetable" },
+  opts: RecommendOptions = {}
+): Promise<RecommendResult> {
+  return recommend(
+    {
+      ...req,
+      mode: "timetable",
+      days: req.days && req.days.length > 0 ? req.days : ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    },
+    opts
+  );
+}
+

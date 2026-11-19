@@ -7,6 +7,7 @@
     "test": "pnpm -r test",
     "agent:auth": "pnpm --filter @dine/ai run auth",
     "agent:order": "pnpm --filter @dine/ai run test:order",
+    "agent:kora": "pnpm --filter @dine/ai run test:kora",
     "agent:find": "pnpm --filter @dine/ai run find",
     "pay:demo": "pnpm --filter @dine/ai run pay:demo"
   },
