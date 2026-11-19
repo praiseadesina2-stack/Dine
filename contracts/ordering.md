@@ -88,7 +88,9 @@ const ref = `order_${userId}_${Date.now()}`; // one reference for the hold and t
 const hold = await walletService.reserve({ telegramUserId: String(userId), amountKobo: conv.totalKobo, reference: ref });
 if (!hold) return /* insufficient balance: the existing top-up prompt */;
 
-const result = await orderingAgent.placeTrayOrder(conv.lines);
+// The agent orders, pays the virtual account Prime gives for this checkout, and waits for
+// Prime's "payment received". Pass the hold's reference: it becomes the Kora payout reference.
+const result = await orderingAgent.placeTrayOrder(conv.lines, undefined, { reference: ref });
 if (!result.success) {
   await walletService.release(ref, result.code);           // nothing was paid
   // result.suggestions → offer "Did you mean …?" buttons; result.cartTouched → clear Prime's cart before a retry
@@ -96,21 +98,16 @@ if (!result.success) {
 }
 
 switch (result.payment?.status) {
-  case "awaiting_transfer": {                               // Prime asked for a bank transfer of exactly result.totalKobo
-    const paid = await payPrimeTransfer({ kora: koraService, transfer: result.transfer!, totalKobo: result.totalKobo!, reference: ref });
-    // paid.message is the line for the student ("Test payment …: Prime was not actually paid." with test keys)
-    if (paid.status === "sent") { /* poll koraService.verifyPayout(ref): "success" → capture(ref); "failed" → release(ref) */ }
-    else if (paid.status === "failed" || paid.status === "blocked") await walletService.release(ref, paid.detail);
-    else if (paid.status === "simulated") await walletService.release(ref, "test mode: Prime not paid");
-    // "uncertain": keep the hold, alert an operator, never call payPrimeTransfer again for this ref
-    break;
-  }
-  case "verified": await walletService.capture(ref); break; // wallet mode: Prime wallet dropped by the total
-  case "not_paid": await walletService.release(ref, "not paid"); break;
-  default: break;                                           // "uncertain": keep the hold, reconcile
+  case "verified":  await walletService.capture(ref); break;                       // Prime confirmed the payment
+  case "simulated": await walletService.release(ref, "test mode: Prime not paid"); break;
+  case "not_paid":  await walletService.release(ref, result.payment.detail); break; // a check blocked it, or Kora refused
+  default: break; // "uncertain": keep the hold, alert an operator, reconcile with koraService.verifyPayout(ref); never order or pay again for this ref
 }
+await ctx.reply(result.payout?.message ?? result.message); // e.g. "Test payment of ₦2,000: Prime was not actually paid."
 // wallet mode only: result.code === "PRIME_WALLET_LOW" → top up the Prime float (result.topUp), then retry
 ```
+
+Do **not** call `koraService.disburse` (or `payPrimeTransfer`) for an order: the agent has already paid, so that would pay Prime twice. `result.bankPaymentDetails` is no longer set for the same reason.
 
 In test mode the hold is released after a `simulated` payment so test balances are not spent on orders Prime never received. Change that only once a real payment has been confirmed end to end.
 
@@ -122,22 +119,23 @@ Students never pay Prime directly: their money stays in Dine's wallet, reserved 
 
 ### By bank transfer (`PRIME_PAY_MODE=transfer`)
 
-Prime's checkout asks for a transfer ("Send ₦X to: Account number … Bank … Name …", format from the Backend Engineer's agent, unconfirmed). The agent returns it as `result.transfer` with `payment.status: "awaiting_transfer"`, only when Prime's amount equals the cart it verified line by line (else `TRANSFER_MISMATCH`). The backend pays it with **`payPrimeTransfer`** (`packages/ai/src/order/pay-transfer.ts`), never with `koraService.disburse` directly. Before calling Kora it checks:
+Prime generates a **new virtual account for every checkout** and asks for a transfer to it ("Send ₦X to: Account number … Bank … Name …", format from the Backend Engineer's agent, unconfirmed). There is no account to pin: **the agent pays whichever account this checkout shows, itself, straight away** (virtual accounts expire), inside the same locked Prime session (`order/order-and-pay.ts`). It accepts the request only when Prime's amount equals the cart it verified line by line (else `TRANSFER_MISMATCH`), and pays through `payPrimeTransfer` (`order/pay-transfer.ts`), which checks before calling Kora:
 
 1. Prime's amount equals `totalKobo`; the account number is 10 digits.
-2. Live keys only: the payee Prime shows **and** the account holder the bank returns (Kora resolve) both match an allowed Prime payee in **`PRIME_PAYEE_NAMES`** (comma-separated, e.g. `Prime That`). Not set means every live payment is blocked.
+2. Live keys only: the payee Prime shows **and** the account holder the bank returns for that virtual account (Kora resolve) both match an allowed Prime payee in **`PRIME_PAYEE_NAMES`** (comma-separated, e.g. `Prime That`). This is what stops money going to an account that is not Prime's, since the number changes every time. Every word of an allowed name must appear in the bank's name (`PRIME THAT LTD` matches `Prime That`). Not set means every live payment is blocked.
 3. Live keys only: Kora's bank list names the bank (`koraService.findBankCode`, no guessed code or fallback).
 4. One reference, made by the caller before the call; `payPrimeTransfer` never retries.
 
-| `status` | Means | Backend does |
-|---|---|---|
-| `simulated` | Test keys: Kora's sandbox accepted it. **No money moved; Prime was not paid** | Release; show `message` ("Test payment … Prime was not actually paid.") |
-| `sent` | Live: Kora accepted the payout | Hold; `koraService.verifyPayout(ref)`: `success` → capture, `failed` → release |
-| `failed` | Kora refused outright | Release; the unpaid Prime order must be cleared |
-| `blocked` | A check stopped it before Kora was called | Release; alert an operator if it was the payee or bank check |
-| `uncertain` | Unknown whether money moved | **Hold**; reconcile with `verifyPayout`; never pay again for this order |
+After Kora accepts the payout, the agent watches Prime's chat (messages after the transfer only) for Prime's own confirmation (`PRIME_PAID`, default wait 3 minutes). That message is the proof of payment, not Kora's word.
 
-**Open:** Kora reporting `success` proves the money reached the account, not that Prime marked the order paid. What Prime shows after receiving a transfer is unknown until one supervised real-money order.
+| `result.payment.status` | Means | Backend does |
+|---|---|---|
+| `verified` | Kora sent it **and** Prime confirmed payment in its chat (amount matching, if shown) | Capture |
+| `simulated` | Test keys: Kora's sandbox took it. **No money moved; Prime was not paid** | Release; show `result.payout.message` |
+| `not_paid` | A check blocked it before Kora (`payout.status: "blocked"`), or Kora refused (`"failed"`) | Release; alert an operator if the payee or bank check blocked it; the unpaid Prime order must be cleared |
+| `uncertain` | Kora's reply was unclear, or Kora sent it but Prime did not confirm in time (or confirmed another amount) | **Hold**; reconcile with `koraService.verifyPayout(result.reference)` and Prime; never pay again for this order |
+
+**Open:** Prime's real "payment received" wording (`PRIME_PAID` is a guess) and the bank-side name of its virtual accounts (what `PRIME_PAYEE_NAMES` must hold). Both come from one supervised real-money order; until then, live payments end `uncertain` or `blocked`, never `verified` by accident.
 
 ### From the Prime wallet float (`PRIME_PAY_MODE=wallet`)
 

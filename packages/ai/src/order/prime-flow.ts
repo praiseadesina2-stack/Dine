@@ -46,6 +46,10 @@ export interface PrimeBot {
   start(): Promise<BotScreen>;
   /** Press a button on `screen` and return the screen the bot shows next. */
   click(screen: BotScreen, button: BotButton): Promise<BotScreen>;
+  /** Marks "now" in the chat; waitForMessage only looks at messages after the latest mark. */
+  markChat?(): Promise<void>;
+  /** The first message from Prime after the mark whose text matches `pattern`, or null after `timeoutMs`. */
+  waitForMessage?(pattern: RegExp, timeoutMs: number): Promise<BotScreen | null>;
 }
 
 export interface OrderTarget {

@@ -18,6 +18,9 @@ import {
 } from "./order/prime-flow.js";
 import { judgeTopUp, readPrimeWallet, type FundingAccount, type PaymentEvidence, type PrimeWallet, type TopUpCheck } from "./order/prime-wallet.js";
 import type { BankTransfer } from "./order/prime-transfer.js";
+import { runOrderAndPay } from "./order/order-and-pay.js";
+import type { KoraPayouts, TransferPayment } from "./order/pay-transfer.js";
+import { KoraPaymentService } from "./kora.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,7 +36,7 @@ export interface OrderTarget extends FlowTarget {
   room?: string;
 }
 
-/** Older shape of Prime's transfer details (amount in naira). Prefer `transfer` + payPrimeTransfer(). */
+/** Older shape of Prime's transfer details (amount in naira). No longer returned; see AgentOrderResult.bankPaymentDetails. */
 export interface BankPaymentDetails {
   accountNumber: string;
   bankName: string;
@@ -70,12 +73,16 @@ export interface AgentOrderResult {
    * reconcile before any retry; on "not_paid", release it.
    */
   payment?: PaymentEvidence;
-  /**
-   * Prime asked for a bank transfer of exactly totalKobo (payment.status "awaiting_transfer").
-   * Pay it with payPrimeTransfer({ kora, transfer, totalKobo, reference }); never directly.
-   */
+  /** The virtual account Prime gave for this checkout, and the amount it asked (= totalKobo). The agent pays it itself. */
   transfer?: BankTransfer;
-  /** Same as `transfer`, in the older naira shape. */
+  /** Transfer mode: the Kora reference used for this order's payout. Store it with the student's hold. */
+  reference?: string;
+  /** Transfer mode: what happened to the payout (checks, Kora status, a line for the student in `payout.message`). */
+  payout?: TransferPayment;
+  /**
+   * NEVER SET any more: the agent pays Prime itself. Kept only so older callers compile;
+   * a caller that paid whenever this was present would otherwise pay Prime twice.
+   */
   bankPaymentDetails?: BankPaymentDetails;
   /** VENDOR_NOT_FOUND / ITEM_NOT_FOUND: similar names on Prime, for "Did you mean…?". Never ordered automatically. */
   suggestions?: string[];
@@ -96,8 +103,11 @@ export class DineOrderingAgent {
   private apiId: number;
   private apiHash: string;
   private sessionString: string;
+  private kora: KoraPayouts;
 
-  constructor() {
+  /** `kora` defaults to KoraPaymentService (KORA_SECRET_KEY); tests pass a fake. */
+  constructor(opts: { kora?: KoraPayouts } = {}) {
+    this.kora = opts.kora ?? new KoraPaymentService();
     this.apiId = parseInt(process.env.TELEGRAM_API_ID || "0", 10);
     this.apiHash = process.env.TELEGRAM_API_HASH || "";
     this.sessionString = process.env.TELEGRAM_STRING_SESSION || "";
@@ -134,15 +144,23 @@ export class DineOrderingAgent {
   }
 
   /**
-   * Orders a whole tray from Prime: every line (any vendors) in ONE Prime cart, ONE
-   * checkout. Every item is checked before anything goes in the cart. Queues behind any
-   * order already running on this session. Build `lines` with trayToCartLines().
-   * Payment follows PRIME_PAY_MODE unless `payWith` is given: "transfer" returns
-   * `transfer` for payPrimeTransfer(); "wallet" pays from the Prime wallet float.
+   * Orders a whole tray from Prime AND pays for it: every line (any vendors) in ONE Prime
+   * cart, ONE checkout, ONE payment. Every item is checked before anything goes in the
+   * cart. Queues behind any order already running on this session (the payment
+   * confirmation is read from the same chat). Build `lines` with trayToCartLines().
+   *
+   * Payment follows PRIME_PAY_MODE unless `payWith` is given:
+   *  - "transfer" (default): pays the virtual account Prime shows for this checkout via
+   *    Kora, then waits for Prime's "payment received". `reference` should be the
+   *    student's hold reference (one is made if omitted; it comes back on the result).
+   *  - "wallet": pays from the Prime wallet float.
+   * Then act on result.payment.status: verified → capture; not_paid / simulated → release;
+   * uncertain → hold and reconcile.
    */
-  public async placeTrayOrder(lines: CartLine[], botUsername?: string, opts: { payWith?: PayWith } = {}): Promise<AgentOrderResult> {
+  public async placeTrayOrder(lines: CartLine[], botUsername?: string, opts: { payWith?: PayWith; reference?: string; confirmTimeoutMs?: number } = {}): Promise<AgentOrderResult> {
     const payWith = opts.payWith ?? payModeFromEnv();
-    return this.withSession(() => this.placeTrayOrderNow(lines, botUsername, payWith));
+    const reference = opts.reference?.trim() || `dine_order_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return this.withSession(() => this.placeTrayOrderNow(lines, botUsername, payWith, reference, opts.confirmTimeoutMs));
   }
 
   /**
@@ -187,14 +205,16 @@ export class DineOrderingAgent {
     return new TelegramPrimeBot(client, await client.getEntity(username));
   }
 
-  private async placeTrayOrderNow(lines: CartLine[], botUsername: string | undefined, payWith: PayWith): Promise<AgentOrderResult> {
+  private async placeTrayOrderNow(lines: CartLine[], botUsername: string | undefined, payWith: PayWith, reference: string, confirmTimeoutMs?: number): Promise<AgentOrderResult> {
     let bot: PrimeBot;
     try {
       bot = await this.primeBot(botUsername);
     } catch (err: any) {
       return { success: false, code: "BOT_ERROR", stage: "start", cartTouched: false, message: `Could not reach Prime: ${err?.message ?? err}`, stepsCompleted: [] };
     }
-    return toAgentResult(await runCartOrder(bot, lines, { payWith }));
+    if (payWith === "wallet") return toAgentResult(await runCartOrder(bot, lines, { payWith }));
+    const { order, payout } = await runOrderAndPay(bot, lines, { kora: this.kora, reference, confirmTimeoutMs });
+    return { ...toAgentResult(order), reference, ...(payout ? { payout } : {}) };
   }
 }
 
@@ -206,8 +226,10 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
       stage: "done",
       cartTouched: true,
       message:
-        r.payment.status === "verified" ? "Order placed on Prime and paid from the Prime wallet."
+        r.payment.status === "verified" ? (r.payment.method === "bank_transfer" ? "Order placed on Prime and paid; Prime confirmed the transfer." : "Order placed on Prime and paid from the Prime wallet.")
+        : r.payment.status === "simulated" ? "Order placed on Prime. Test payment only: Prime was not paid."
         : r.payment.status === "awaiting_transfer" ? "Order placed on Prime; waiting for the bank transfer."
+        : r.payment.status === "not_paid" && r.payment.method === "bank_transfer" ? `Order placed on Prime but not paid: ${r.payment.detail}`
         : r.payment.status === "uncertain" ? "Order placed on Prime; payment is uncertain, reconcile before any retry."
         : r.paystackUrl ? "Order placed on Prime; not paid yet, Prime returned a checkout link."
         : "Order placed on Prime; not paid yet.",
@@ -216,12 +238,7 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
       paystackUrl: r.paystackUrl,
       orderRef: r.orderRef,
       payment: r.payment,
-      ...(r.transfer
-        ? {
-            transfer: r.transfer,
-            bankPaymentDetails: { accountNumber: r.transfer.accountNumber, bankName: r.transfer.bankName, accountName: r.transfer.accountName ?? "", amount: r.transfer.amountKobo / 100 },
-          }
-        : {}),
+      ...(r.transfer ? { transfer: r.transfer } : {}),
       stepsCompleted: r.steps,
     };
   }
@@ -261,6 +278,32 @@ class TelegramPrimeBot implements PrimeBot {
     const before = await this.latestKey();
     await message.click({ i: button.row, j: button.col });
     return this.waitForReply(before);
+  }
+
+  /** Messages (id → edit stamp) present at the last markChat(); anything else is new. */
+  private marked = new Map<number, string>();
+
+  async markChat(): Promise<void> {
+    const recent = await this.client.getMessages(this.bot, { limit: 10 });
+    this.marked = new Map(recent.map((m: any) => [m.id, `${m.editDate ?? 0}:${m.message ?? ""}`]));
+  }
+
+  async waitForMessage(pattern: RegExp, timeoutMs: number): Promise<BotScreen | null> {
+    const deadline = Date.now() + timeoutMs;
+    const minId = Math.min(...this.marked.keys(), Number.MAX_SAFE_INTEGER);
+    while (Date.now() < deadline) {
+      const recent = await this.client.getMessages(this.bot, { limit: 10 });
+      // Oldest first, so the first confirmation after the mark wins. New messages, or ones
+      // Prime edited since the mark (it may edit the checkout message in place).
+      for (const m of [...recent].reverse()) {
+        if (m.out || (m.id < minId && !this.marked.has(m.id))) continue;
+        const stamp = `${m.editDate ?? 0}:${m.message ?? ""}`;
+        if (this.marked.get(m.id) === stamp) continue;
+        if (pattern.test(String(m.message ?? ""))) return this.toScreen(m);
+      }
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+    return null;
   }
 
   private async latest(): Promise<any | null> {

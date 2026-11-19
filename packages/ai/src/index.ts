@@ -20,4 +20,5 @@ export { trayToCartLines, type TrayConversion, type TrayItemInput } from "./orde
 export type { FundingAccount, PaymentEvidence, PaymentStatus, PrimeWallet, TopUpCheck } from "./order/prime-wallet.js";
 export { parseBankTransfer, type BankTransfer } from "./order/prime-transfer.js";
 export { payPrimeTransfer, type TransferPayment, type TransferStatus } from "./order/pay-transfer.js";
+export { runOrderAndPay, PRIME_PAID } from "./order/order-and-pay.js";
 export { suggestNames } from "./order/suggest.js";

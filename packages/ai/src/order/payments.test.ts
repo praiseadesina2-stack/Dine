@@ -10,6 +10,7 @@ import { runCartOrder, runOrderFlow, type OrderTarget } from "./prime-flow.js";
 import { parseBankTransfer } from "./prime-transfer.js";
 import { payeeAllowed, payPrimeTransfer, type KoraPayouts } from "./pay-transfer.js";
 import { similarity, suggestNames } from "./suggest.js";
+import { runOrderAndPay } from "./order-and-pay.js";
 import { FakePrime } from "./sim-prime.js";
 import { WalletService } from "../wallet.js";
 import type { KoraDisbursementPayload } from "../kora.js";
@@ -180,6 +181,63 @@ test("payee matching needs every word of an allowed name", () => {
   assert.ok(!payeeAllowed("PRIME LTD", ["Prime That"]));
   assert.ok(!payeeAllowed(undefined, ["Prime That"]));
   assert.ok(!payeeAllowed("Prime That", []));
+});
+
+// ---------------------------------------------------------------- the agent orders AND pays
+
+const checkoutTo = (account: string, naira = "2,000") => ({
+  cartButtons: ["Checkout"],
+  checkoutReply: { text: `Send ₦${naira} to:\nAccount number: ${account}\nBank: Flutterwave MFB\nName: Prime That`, buttons: [] },
+});
+const orderAndPay = (bot: FakePrime, kora: KoraPayouts, reference = "ord_9") =>
+  runOrderAndPay(bot, [shawarma], { kora, reference, allowedPayees: ["Prime That"], confirmTimeoutMs: 10 });
+
+test("each checkout's own virtual account is paid; nothing is pinned", async () => {
+  const { kora, sent } = fakeKora({ resolvedName: "PRIME THAT" });
+  await orderAndPay(new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "Payment received ✅" }), kora, "a");
+  await orderAndPay(new FakePrime({ ...checkoutTo("8123456789"), paidMessage: "Payment received ✅" }), kora, "b");
+  assert.deepEqual(sent.map((p) => [p.accountNumber, p.reference]), [["9479959026", "a"], ["8123456789", "b"]]);
+});
+
+test("live: verified only when Prime confirms the payment in its chat", async () => {
+  const { kora } = fakeKora({ resolvedName: "PRIME THAT" });
+  const bot = new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "✅ Payment received! ₦2,000\nYour order is being prepared." });
+  const { order, payout } = await orderAndPay(bot, kora);
+  assert.equal(payout?.status, "sent");
+  assert.ok(order.ok && order.payment.status === "verified", JSON.stringify(order.ok && order.payment));
+  assert.equal(bot.marks, 1, "the chat is marked before paying, so only later messages count");
+});
+
+test("live: Kora sent but Prime silent, or Prime confirms another amount → uncertain", async () => {
+  const silent = await orderAndPay(new FakePrime(checkoutTo("9479959026")), fakeKora({ resolvedName: "PRIME THAT" }).kora);
+  assert.ok(silent.order.ok && silent.order.payment.status === "uncertain", JSON.stringify(silent.order.ok && silent.order.payment));
+
+  const wrong = await orderAndPay(new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "Payment received: ₦1,500" }), fakeKora({ resolvedName: "PRIME THAT" }).kora);
+  assert.ok(wrong.order.ok && wrong.order.payment.status === "uncertain");
+});
+
+test("test keys: simulated, Prime's confirmation is not awaited, Prime not paid", async () => {
+  const { kora, sent } = fakeKora({ test: true });
+  const { order, payout } = await orderAndPay(new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "Payment received" }), kora);
+  assert.equal(payout?.status, "simulated");
+  assert.ok(order.ok && order.payment.status === "simulated");
+  assert.equal(sent.length, 1);
+});
+
+test("a virtual account belonging to someone else is never paid", async () => {
+  const { kora, sent } = fakeKora({ resolvedName: "JOHN DOE" });
+  const { order, payout } = await orderAndPay(new FakePrime(checkoutTo("9479959026")), kora);
+  assert.equal(payout?.status, "blocked");
+  assert.ok(order.ok && order.payment.status === "not_paid");
+  assert.equal(sent.length, 0);
+});
+
+test("an order that fails before checkout never reaches Kora", async () => {
+  const { kora, sent } = fakeKora({ resolvedName: "PRIME THAT" });
+  const { order, payout } = await runOrderAndPay(new FakePrime({ closed: ["Slash Shawarma"] }), [shawarma], { kora, reference: "x" });
+  assert.ok(!order.ok && order.code === "VENDOR_CLOSED");
+  assert.equal(payout, undefined);
+  assert.equal(sent.length, 0);
 });
 
 // ---------------------------------------------------------------- student wallet

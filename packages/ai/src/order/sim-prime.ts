@@ -38,6 +38,8 @@ export interface FakeOptions {
   failAfterCheckout?: boolean;
   /** SYNTHETIC: the "Total" the cart screen shows, when it should disagree with the items (default: the real sum). */
   cartTotalOverrideKobo?: number;
+  /** SYNTHETIC: what Prime says in the chat after a transfer lands (none: Prime stays silent). */
+  paidMessage?: string;
 }
 
 /** Prime's wallet screen, in the exact format crawled on 19 Oct. */
@@ -97,6 +99,18 @@ export class FakePrime implements PrimeBot {
 
   async start() {
     return this.screen(crawl.start);
+  }
+
+  /** Times markChat was called (the payment watch starts from the last one). */
+  marks = 0;
+
+  async markChat() {
+    this.marks++;
+  }
+
+  async waitForMessage(pattern: RegExp, _timeoutMs: number): Promise<BotScreen | null> {
+    const text = this.o.paidMessage;
+    return this.marks > 0 && text && pattern.test(text) ? { text, buttons: [] } : null;
   }
 
   async click(screen: BotScreen, button: BotButton): Promise<BotScreen> {

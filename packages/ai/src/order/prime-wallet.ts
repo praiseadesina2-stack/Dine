@@ -74,7 +74,10 @@ export async function readPrimeWallet(bot: PrimeBot): Promise<PrimeWallet> {
 export const WALLET_PAY_LABELS = ["Pay with wallet", "Pay from wallet", "Pay with Wallet balance", "Use wallet"];
 
 export type PaymentStatus =
-  /** The wallet dropped by exactly the order total: Prime took the payment. */
+  /**
+   * Prime took the payment. Wallet: the balance dropped by exactly the order total.
+   * Transfer: Kora sent it AND Prime's chat confirmed payment afterwards.
+   */
   | "verified"
   /** The wallet did not move: nothing was paid (e.g. Prime returned a Paystack link instead). */
   | "not_paid"
@@ -84,7 +87,9 @@ export type PaymentStatus =
    * Prime placed the order and asked for a bank transfer of exactly the order total
    * (`transfer`). Nothing is paid yet: the backend pays it with payPrimeTransfer().
    */
-  | "awaiting_transfer";
+  | "awaiting_transfer"
+  /** Kora test keys: the transfer went to Kora's sandbox. Prime was NOT paid. Release the student's hold. */
+  | "simulated";
 
 export interface PaymentEvidence {
   method: "prime_wallet" | "paystack_link" | "bank_transfer";
