@@ -100,7 +100,13 @@ export async function runOrderAndPay(bot: PrimeBot, lines: CartLine[], o: OrderA
 
   if (!bot.waitForMessage) return done("uncertain", "Kora sent the money but Prime's chat cannot be watched; reconcile");
   const timeout = o.confirmTimeoutMs ?? DEFAULT_CONFIRM_TIMEOUT_MS;
-  const msg = await bot.waitForMessage(PRIME_PAID, timeout);
+  let msg: Awaited<ReturnType<NonNullable<PrimeBot["waitForMessage"]>>>;
+  try {
+    msg = await bot.waitForMessage(PRIME_PAID, timeout);
+  } catch (err: any) {
+    // The money has gone: losing the chat now must never look like "not paid".
+    return done("uncertain", `Kora sent ₦${due / 100} but Prime's chat could not be read (${err?.message ?? err}); hold and reconcile`);
+  }
   if (!msg) {
     return done("uncertain", `Kora sent ₦${due / 100} but Prime did not confirm within ${Math.round(timeout / 1000)} s; hold and check verifyPayout("${o.reference}")`);
   }

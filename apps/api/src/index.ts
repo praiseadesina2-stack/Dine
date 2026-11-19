@@ -31,6 +31,7 @@ import {
   formatFindReply,
   primeCatalogue,
   loadReviewStore,
+  trayToCartLines,
   type MealSuggestion,
   type RecommendRequest,
 } from "@dine/ai";
@@ -317,12 +318,22 @@ bot.callbackQuery(/^hall:(.+)$/, async (ctx) => {
 async function runOrderPlacement(ctx: any, userId: number) {
   const tray = getTray(userId);
   const session = getSession(userId);
-  const total = tray.reduce((sum, item) => sum + item.price, 0);
 
-  // 1. Check Dine Wallet Balance first
-  const userBalance = await walletService.getBalance(String(userId));
+  // Check the tray (exact Prime vendor, item and price for every line) and work out the
+  // charges, once per order: food + Prime's ₦600 + Dine's ₦100.
+  const conv = trayToCartLines(tray);
+  if (!conv.ok) {
+    await ctx.reply(`⚠️ Can't place this order:\n${conv.problems.join("\n")}`, { reply_markup: mainKeyboard });
+    return;
+  }
+  const { charges } = conv;
+  const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString()}`;
+  const total = charges.chargeStudentKobo / 100;
+
+  // 1. Check Dine Wallet Balance first (money set aside for another order doesn't count)
+  const userBalance = await walletService.getAvailableBalance(String(userId));
   if (userBalance < total) {
-    const deficit = total - userBalance;
+    const deficit = Math.ceil(total - userBalance);
     const kb = new InlineKeyboard()
       .text(`💳 Top-up ₦${deficit.toLocaleString()}`, `fund_amount:${deficit}`)
       .row()
@@ -332,6 +343,7 @@ async function runOrderPlacement(ctx: any, userId: number) {
     await ctx.reply(
       `⚠️ *Insufficient Dine Wallet Balance*\n\n` +
       `📦 Order Total: *₦${total.toLocaleString()}*\n` +
+      `_(food ${naira(charges.foodKobo)} + Prime fee ${naira(charges.primeFeeKobo)} + service fee ${naira(charges.dineFeeKobo)})_\n` +
       `💰 Current Balance: *₦${userBalance.toLocaleString()}*\n` +
       `📉 Short by: *₦${deficit.toLocaleString()}*\n\n` +
       `_Top up your wallet with test cards to authorize Dine to pay Prime for you!_`,
@@ -363,130 +375,83 @@ async function runOrderPlacement(ctx: any, userId: number) {
     return;
   }
 
-  // Debit student's Dine wallet
-  await walletService.debit({
+  // 2. Set the money aside in the student's wallet. It is taken only once Prime is paid,
+  //    and given back if the order or the payment fails. One reference for the hold and
+  //    the Kora payout to Prime.
+  const ref = `order_${userId}_${Date.now()}`;
+  const hold = await walletService.reserve({
     telegramUserId: String(userId),
-    amountNaira: total,
-    reference: `order_${Date.now()}_${userId}`,
+    amountKobo: charges.chargeStudentKobo,
+    reference: ref,
     description: `Meal order (${tray.map((t) => t.itemName).join(", ")})`,
   });
-  const remainingBalance = await walletService.getBalance(String(userId));
+  if (!hold) {
+    await ctx.reply("⚠️ Insufficient Dine Wallet Balance. Please top up and try again.", { reply_markup: mainKeyboard });
+    return;
+  }
 
   const processingMsg = await ctx.reply(
-    `⏳ *Wallet Debited (₦${total.toLocaleString()}) — Placing order on Prime...*\n\n` +
-    `📦 *${tray.length} item(s)* · Remaining Wallet: ₦${remainingBalance.toLocaleString()}\n` +
-    `📍 *${session.hall}*, Room *${session.room}*\n\n` +
-    `_Autonomous agent routing to vendor & initiating transfer..._`,
+    `⏳ *Placing your order on Prime...*\n\n` +
+    `📦 *${tray.length} item(s)* · ${naira(charges.chargeStudentKobo)}\n` +
+    `📍 *${session.hall}*, Room *${session.room}*`,
     { parse_mode: "Markdown" }
   );
 
-  const results: string[] = [];
-  const paystackLinks: string[] = [];
-  const paymentConfirmations: string[] = [];
-
-  for (let i = 0; i < tray.length; i++) {
-    const item = tray[i];
-    const label = `#${i + 1} ${item.itemName} (${item.vendorName})`;
-
-    try {
-      const result = await orderingAgent.placeOrder({
-        vendorName: item.vendorName,
-        itemName: item.itemName,
-        hall: session.hall,
-        room: session.room,
-      });
-
-      if (result.success) {
-        results.push(`✅ ${label}`);
-
-        // Automated Bank Transfer Payment via Kora API
-        if (result.bankPaymentDetails) {
-          const bankDetails = result.bankPaymentDetails;
-          const transferAmount = bankDetails.amount || item.price;
-
-          if (koraService.isConfigured()) {
-            await ctx.reply(
-              `💳 *Prime checkout detected!*\n` +
-              `Recipient: *${bankDetails.accountName}*\n` +
-              `Bank: *${bankDetails.bankName}* (\`${bankDetails.accountNumber}\`)\n` +
-              `Amount: *₦${transferAmount.toLocaleString()}*\n\n` +
-              `_Executing automated interbank transfer via Kora API..._`,
-              { parse_mode: "Markdown" }
-            );
-
-            const bankCode = (await koraService.getBankCode(bankDetails.bankName)) || "110002";
-            const disburseResult = await koraService.disburse({
-              bankCode,
-              accountNumber: bankDetails.accountNumber,
-              amount: transferAmount,
-              customerName: `${ctx.from.first_name || "Student"} (via Dine)`,
-              narration: `Dine pay for ${item.itemName}`,
-            });
-
-            if (disburseResult.success) {
-              paymentConfirmations.push(
-                `💸 *Paid ₦${transferAmount.toLocaleString()} to ${bankDetails.accountName}*\n` +
-                `   • Bank: ${bankDetails.bankName}\n` +
-                `   • Account: \`${bankDetails.accountNumber}\`\n` +
-                `   • Ref: \`${disburseResult.reference}\` (Status: ${disburseResult.status})`
-              );
-            } else {
-              paymentConfirmations.push(
-                `⚠️ *Transfer to Prime failed:* ${disburseResult.message}\n` +
-                `Manual transfer target: \`${bankDetails.accountNumber}\` (${bankDetails.bankName})`
-              );
-            }
-          } else {
-            paymentConfirmations.push(
-              `🏦 *Send ₦${transferAmount.toLocaleString()} to Prime:*\n` +
-              `• Account: \`${bankDetails.accountNumber}\`\n` +
-              `• Bank: *${bankDetails.bankName}*\n` +
-              `• Name: *${bankDetails.accountName}*\n` +
-              `_(Set KORA_SECRET_KEY in .env to auto-pay)_`
-            );
-          }
-        } else if (result.paystackUrl) {
-          paystackLinks.push(`💳 [Pay for ${item.itemName}](${result.paystackUrl})`);
-        }
-      } else {
-        results.push(`❌ ${label}\n   _${result.message}_`);
-      }
-    } catch (err: any) {
-      results.push(`❌ ${label}\n   _Error: ${err?.message || "Unknown error"}_`);
-    }
+  // 3. The agent puts every item in ONE Prime cart, checks out once, pays the virtual
+  //    account Prime generates (food + Prime's fee) through Kora, and waits for Prime to
+  //    confirm. It never pays more than the student approved.
+  let result: Awaited<ReturnType<typeof orderingAgent.placeTrayOrder>> | null = null;
+  try {
+    result = await orderingAgent.placeTrayOrder(conv.lines, undefined, {
+      reference: ref,
+      maxPayPrimeKobo: charges.payPrimeKobo,
+    });
+  } catch (err: any) {
+    console.error(`[Order ${ref}] agent error:`, err);
   }
+  console.log(`[Order ${ref}]`, result?.payment?.status ?? "no result", result?.payment?.detail ?? result?.message ?? "");
 
-  // Clear tray after attempt
-  userTrays.set(userId, []);
-
-  let summary = `🎉 *Order Summary*\n`;
-  summary += `📍 *${session.hall}*, Room *${session.room}*\n\n`;
-  summary += results.join("\n") + "\n\n";
-  summary += `💵 *Total: ₦${total.toLocaleString()}*\n`;
-  summary += `💰 *Remaining Wallet Balance: ₦${remainingBalance.toLocaleString()}*\n\n`;
-
-  if (paymentConfirmations.length > 0) {
-    summary += `*Payment Execution:*\n${paymentConfirmations.join("\n\n")}\n\n`;
+  // 4. Settle the student's wallet from what actually happened.
+  let text: string;
+  const status = result?.payment?.status;
+  if (result && !result.success) {
+    // The order never reached payment: nothing was paid, so the money goes back.
+    await walletService.release(ref, result.code);
+    text = `❌ Your order wasn't placed: ${result.message}`;
+    if (result.suggestions?.length) text += `\n\nDid you mean: ${result.suggestions.join(", ")}?`;
+    text += `\n\nYou haven't been charged.`;
+  } else if (result && (status === "verified" || status === "simulated")) {
+    // Prime was paid: take the money from the wallet.
+    await walletService.capture(ref);
+    userTrays.set(userId, []);
+    const balance = await walletService.getBalance(String(userId));
+    text =
+      `✅ Payment received, order has been confirmed\n\n` +
+      tray.map((t) => `• ${t.itemName} (${t.vendorName})`).join("\n") + `\n\n` +
+      `🍽 Food: ${naira(charges.foodKobo)}\n` +
+      `🧾 Prime fee: ${naira(charges.primeFeeKobo)}\n` +
+      `🧾 Service fee: ${naira(charges.dineFeeKobo)}\n` +
+      `💵 Total: ${naira(charges.chargeStudentKobo)}\n` +
+      `💰 Wallet balance: ₦${balance.toLocaleString()}\n` +
+      `📍 ${session.hall}, Room ${session.room}`;
+  } else if (result && status === "not_paid") {
+    // A check stopped the payment, or Kora refused it: nothing was paid.
+    await walletService.release(ref, result.payment?.detail);
+    text = "❌ Payment didn't go through, so your order wasn't placed. You haven't been charged.";
+  } else {
+    // "uncertain", or the agent crashed: money may have moved. Keep it set aside until
+    // someone checks (Kora: koraService.verifyPayout(ref)). Never retry this order.
+    userTrays.set(userId, []);
+    text = "⏳ Your payment is being checked. We'll confirm your order shortly.";
   }
-
-  if (paystackLinks.length > 0) {
-    summary += `*Payment Links:*\n${paystackLinks.join("\n")}\n\n`;
-    summary += `_Tap a link above to complete payment._`;
-  }
-
 
   try {
-    await ctx.api.editMessageText(ctx.chat!.id, processingMsg.message_id, summary, {
-      parse_mode: "Markdown",
-    });
+    await ctx.api.editMessageText(ctx.chat!.id, processingMsg.message_id, text);
   } catch {
-    // ignore edit failure
+    await ctx.reply(text);
   }
 
-  await ctx.reply("👆 Order complete! What's next?", {
-    reply_markup: mainKeyboard,
-    parse_mode: "Markdown",
-  });
+  await ctx.reply("👆 What's next?", { reply_markup: mainKeyboard });
 }
 
 // ----------------------------------------------------
