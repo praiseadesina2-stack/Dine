@@ -103,7 +103,7 @@ switch (result.payment?.status) {
   case "not_paid":  await walletService.release(ref, result.payment.detail); break; // a check blocked it, or Kora refused
   default: break; // "uncertain": keep the hold, alert an operator, reconcile with koraService.verifyPayout(ref); never order or pay again for this ref
 }
-await ctx.reply(result.payout?.message ?? result.message); // e.g. "Test payment of ₦2,000: Prime was not actually paid."
+await ctx.reply(result.payout?.message ?? result.message); // "Payment received, order has been confirmed" on verified (and simulated, in test mode)
 // wallet mode only: result.code === "PRIME_WALLET_LOW" → top up the Prime float (result.topUp), then retry
 ```
 
@@ -122,7 +122,7 @@ Students never pay Prime directly: their money stays in Dine's wallet, reserved 
 Prime generates a **new virtual account for every checkout** and asks for a transfer to it ("Send ₦X to: Account number … Bank … Name …", format from the Backend Engineer's agent, unconfirmed). There is no account to pin: **the agent pays whichever account this checkout shows, itself, straight away** (virtual accounts expire), inside the same locked Prime session (`order/order-and-pay.ts`). It accepts the request only when Prime's amount equals the cart it verified line by line (else `TRANSFER_MISMATCH`), and pays through `payPrimeTransfer` (`order/pay-transfer.ts`), which checks before calling Kora:
 
 1. Prime's amount equals `totalKobo`; the account number is 10 digits.
-2. Live keys only: the payee Prime shows **and** the account holder the bank returns for that virtual account (Kora resolve) both match an allowed Prime payee in **`PRIME_PAYEE_NAMES`** (comma-separated, e.g. `Prime That`). This is what stops money going to an account that is not Prime's, since the number changes every time. Every word of an allowed name must appear in the bank's name (`PRIME THAT LTD` matches `Prime That`). Not set means every live payment is blocked.
+2. Live keys only: the payee Prime shows **and** the account holder the bank returns for that virtual account (Kora resolve) both match an allowed payee. Prime names each virtual account after the **Prime customer's username**, and every Dine order uses the one Dine-owned Prime account, so the allowed payee is that username: **`PRIME_PAYEE_NAMES`** (comma-separated) if set, else the Telegram username of the ordering session. This is what stops money going to someone else's account, since the number changes every time. Every word of the allowed name must appear in the bank's name (`DINE_ORDERS` matches `dine_orders`). No allowed name means every live payment is blocked.
 3. Live keys only: Kora's bank list names the bank (`koraService.findBankCode`, no guessed code or fallback).
 4. One reference, made by the caller before the call; `payPrimeTransfer` never retries.
 
@@ -131,11 +131,11 @@ After Kora accepts the payout, the agent watches Prime's chat (messages after th
 | `result.payment.status` | Means | Backend does |
 |---|---|---|
 | `verified` | Kora sent it **and** Prime confirmed payment in its chat (amount matching, if shown) | Capture |
-| `simulated` | Test keys: Kora's sandbox took it. **No money moved; Prime was not paid** | Release; show `result.payout.message` |
+| `simulated` | Test keys: Kora's sandbox took it. **No money moved; Prime was not paid.** The student still sees "Payment received, order has been confirmed" so testers get the real flow | Release (never capture a `simulated` payment) |
 | `not_paid` | A check blocked it before Kora (`payout.status: "blocked"`), or Kora refused (`"failed"`) | Release; alert an operator if the payee or bank check blocked it; the unpaid Prime order must be cleared |
 | `uncertain` | Kora's reply was unclear, or Kora sent it but Prime did not confirm in time (or confirmed another amount) | **Hold**; reconcile with `koraService.verifyPayout(result.reference)` and Prime; never pay again for this order |
 
-**Open:** Prime's real "payment received" wording (`PRIME_PAID` is a guess) and the bank-side name of its virtual accounts (what `PRIME_PAYEE_NAMES` must hold). Both come from one supervised real-money order; until then, live payments end `uncertain` or `blocked`, never `verified` by accident.
+**Open:** Prime's real "payment received" wording (`PRIME_PAID` is a guess), and the exact form of the username on its virtual accounts as the bank returns it (and whether it is the Telegram username or a Prime-only one). Both come from one supervised real-money order; until then, live payments end `uncertain` or `blocked`, never `verified` by accident.
 
 ### From the Prime wallet float (`PRIME_PAY_MODE=wallet`)
 

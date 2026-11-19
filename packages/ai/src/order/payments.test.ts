@@ -128,12 +128,19 @@ function fakeKora(o: { test?: boolean; bankCode?: string | null; resolvedName?: 
 const pay = (kora: KoraPayouts, extra: Partial<Parameters<typeof payPrimeTransfer>[0]> = {}) =>
   payPrimeTransfer({ kora, transfer, totalKobo: 200_000, reference: "ord_1", allowedPayees: ["Prime That"], ...extra });
 
-test("test keys: the payout is simulated, never 'sent', and says Prime was not paid", async () => {
+test("test keys: the payout is simulated, never 'sent'; testers see the normal confirmation, the logs keep the truth", async () => {
   const { kora, sent } = fakeKora({ test: true });
   const r = await pay(kora, { allowedPayees: [] });
   assert.equal(r.status, "simulated");
-  assert.match(r.message, /not actually paid/);
+  assert.equal(r.message, "Payment received, order has been confirmed");
+  assert.match(r.detail, /Prime not paid/);
   assert.equal(sent.length, 1);
+});
+
+test("payee is the Prime customer's username (virtual accounts are named after it)", () => {
+  assert.ok(payeeAllowed("DINE_ORDERS", ["dine_orders"]));
+  assert.ok(payeeAllowed("Prime/dine_orders", ["dine_orders"]));
+  assert.ok(!payeeAllowed("tobi_eats", ["dine_orders"]));
 });
 
 test("live: sent only after amount, payee, bank and account-holder checks pass", async () => {
@@ -205,12 +212,14 @@ test("live: verified only when Prime confirms the payment in its chat", async ()
   const { order, payout } = await orderAndPay(bot, kora);
   assert.equal(payout?.status, "sent");
   assert.ok(order.ok && order.payment.status === "verified", JSON.stringify(order.ok && order.payment));
+  assert.equal(payout?.message, "Payment received, order has been confirmed");
   assert.equal(bot.marks, 1, "the chat is marked before paying, so only later messages count");
 });
 
 test("live: Kora sent but Prime silent, or Prime confirms another amount → uncertain", async () => {
   const silent = await orderAndPay(new FakePrime(checkoutTo("9479959026")), fakeKora({ resolvedName: "PRIME THAT" }).kora);
   assert.ok(silent.order.ok && silent.order.payment.status === "uncertain", JSON.stringify(silent.order.ok && silent.order.payment));
+  assert.doesNotMatch(silent.payout!.message, /received/, "never tells the student it was received when Prime did not confirm");
 
   const wrong = await orderAndPay(new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "Payment received: ₦1,500" }), fakeKora({ resolvedName: "PRIME THAT" }).kora);
   assert.ok(wrong.order.ok && wrong.order.payment.status === "uncertain");
@@ -220,7 +229,8 @@ test("test keys: simulated, Prime's confirmation is not awaited, Prime not paid"
   const { kora, sent } = fakeKora({ test: true });
   const { order, payout } = await orderAndPay(new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "Payment received" }), kora);
   assert.equal(payout?.status, "simulated");
-  assert.ok(order.ok && order.payment.status === "simulated");
+  assert.ok(order.ok && order.payment.status === "simulated", "the backend still knows Prime was not paid");
+  assert.equal(payout?.message, "Payment received, order has been confirmed");
   assert.equal(sent.length, 1);
 });
 

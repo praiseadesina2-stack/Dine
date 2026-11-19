@@ -10,7 +10,7 @@
  * transfer, never Kora's word alone. Kora "sent" with no message from Prime is "uncertain".
  */
 import { runCartOrder, type CartLine, type OrderFlowResult, type PrimeBot } from "./prime-flow.js";
-import { payPrimeTransfer, type KoraPayouts, type TransferPayment } from "./pay-transfer.js";
+import { PAID_MESSAGE, payPrimeTransfer, type KoraPayouts, type TransferPayment } from "./pay-transfer.js";
 import type { PaymentEvidence } from "./prime-wallet.js";
 
 /**
@@ -49,7 +49,14 @@ export async function runOrderAndPay(bot: PrimeBot, lines: CartLine[], o: OrderA
   const steps = [...order.steps, `payout ${payout.status}: ${payout.detail}`];
   const done = (status: PaymentEvidence["status"], detail: string): OrderAndPayResult => ({
     order: { ...order, steps: [...steps, `payment ${status}: ${detail}`], payment: { ...order.payment, status, detail } },
-    payout,
+    // The student-facing line follows the final status, not Kora's first answer.
+    payout: {
+      ...payout,
+      message:
+        status === "verified" || status === "simulated" ? PAID_MESSAGE
+        : status === "uncertain" ? "Your payment is being checked. We'll confirm your order shortly."
+        : payout.message,
+    },
   });
 
   switch (payout.status) {

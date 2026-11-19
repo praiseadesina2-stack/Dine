@@ -12,7 +12,11 @@
  *   5. One reference, created by the caller before the call. Never resent by this function.
  *
  * With Kora test keys nothing is paid: Kora sends to its sandbox account and the result is
- * "simulated", never "sent". Prime is NOT paid in test mode, and the bot must say so.
+ * "simulated", never "sent". Prime is NOT paid in test mode; the student-facing `message`
+ * still reads "Payment received, order has been confirmed" so testers see the real flow.
+ *
+ * Prime makes a new virtual account per checkout, named after the Prime customer's
+ * username. All Dine orders use one Prime account, so the allowed payee is that username.
  */
 import type { BankTransfer } from "./prime-transfer.js";
 import type { KoraDisbursementPayload, KoraDisbursementResult, AccountResolveResult } from "../kora.js";
@@ -54,6 +58,9 @@ export interface KoraPayouts {
   resolveAccount(accountNumber: string, bankCode: string): Promise<AccountResolveResult>;
   disburse(payload: KoraDisbursementPayload): Promise<KoraDisbursementResult>;
 }
+
+/** What the student sees once the payment went through (and, with test keys, once the sandbox took it). */
+export const PAID_MESSAGE = "Payment received, order has been confirmed";
 
 const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean);
 
@@ -140,12 +147,14 @@ export async function payPrimeTransfer(args: {
   const extra = { ...(resolvedName ? { resolvedName } : {}), koraStatus: r.status };
 
   if (test) {
+    // The student-facing line reads like a real payment so testers see the real flow; the
+    // status ("simulated") and detail keep the truth for the backend and the logs.
     return r.success
-      ? { ...base, ...extra, status: "simulated", detail: `Kora sandbox accepted ${naira} (ref ${reference}); no money moved`, message: `Test payment of ${naira}: Prime was not actually paid.` }
+      ? { ...base, ...extra, status: "simulated", detail: `Kora sandbox accepted ${naira} (ref ${reference}); no money moved, Prime not paid`, message: PAID_MESSAGE }
       : { ...base, ...extra, status: "failed", detail: `Kora sandbox refused: ${r.message}`, message: `Test payment failed: ${r.message}` };
   }
   if (r.success) {
-    return { ...base, ...extra, status: "sent", detail: `Kora accepted ${naira} to ${transfer.accountNumber} (ref ${reference}, ${r.status})`, message: `Paying Prime ${naira}…` };
+    return { ...base, ...extra, status: "sent", detail: `Kora accepted ${naira} to ${transfer.accountNumber} (ref ${reference}, ${r.status})`, message: "Payment sent, waiting for Prime to confirm…" };
   }
   if (r.raw?.data?.status === "failed") {
     return { ...base, ...extra, status: "failed", detail: `Kora refused the payout: ${r.message}`, message: "Payment to Prime failed; the order was not paid." };

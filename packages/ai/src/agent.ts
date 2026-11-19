@@ -19,7 +19,7 @@ import {
 import { judgeTopUp, readPrimeWallet, type FundingAccount, type PaymentEvidence, type PrimeWallet, type TopUpCheck } from "./order/prime-wallet.js";
 import type { BankTransfer } from "./order/prime-transfer.js";
 import { runOrderAndPay } from "./order/order-and-pay.js";
-import type { KoraPayouts, TransferPayment } from "./order/pay-transfer.js";
+import { PAID_MESSAGE, type KoraPayouts, type TransferPayment } from "./order/pay-transfer.js";
 import { KoraPaymentService } from "./kora.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -186,6 +186,23 @@ export class DineOrderingAgent {
     }
   }
 
+  /**
+   * Who a Prime virtual account may belong to. Prime names each one after the customer's
+   * username, and every Dine order uses this one Prime account, so: PRIME_PAYEE_NAMES if
+   * set, else the Telegram username of Dine's ordering session. Empty means live payments
+   * are blocked.
+   */
+  private async allowedPayees(): Promise<string[]> {
+    const fromEnv = (process.env.PRIME_PAYEE_NAMES ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (fromEnv.length) return fromEnv;
+    try {
+      const me: any = await (await this.getClient()).getMe();
+      return me?.username ? [String(me.username)] : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** One Prime conversation at a time per Telegram session. */
   private async withSession<T>(work: () => Promise<T>): Promise<T> {
     const key = this.sessionString || "default";
@@ -213,7 +230,8 @@ export class DineOrderingAgent {
       return { success: false, code: "BOT_ERROR", stage: "start", cartTouched: false, message: `Could not reach Prime: ${err?.message ?? err}`, stepsCompleted: [] };
     }
     if (payWith === "wallet") return toAgentResult(await runCartOrder(bot, lines, { payWith }));
-    const { order, payout } = await runOrderAndPay(bot, lines, { kora: this.kora, reference, confirmTimeoutMs });
+    const allowedPayees = await this.allowedPayees();
+    const { order, payout } = await runOrderAndPay(bot, lines, { kora: this.kora, reference, confirmTimeoutMs, allowedPayees });
     return { ...toAgentResult(order), reference, ...(payout ? { payout } : {}) };
   }
 }
@@ -226,8 +244,9 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
       stage: "done",
       cartTouched: true,
       message:
-        r.payment.status === "verified" ? (r.payment.method === "bank_transfer" ? "Order placed on Prime and paid; Prime confirmed the transfer." : "Order placed on Prime and paid from the Prime wallet.")
-        : r.payment.status === "simulated" ? "Order placed on Prime. Test payment only: Prime was not paid."
+        r.payment.status === "verified" ? (r.payment.method === "bank_transfer" ? PAID_MESSAGE : "Order placed on Prime and paid from the Prime wallet.")
+        // Test keys: reads like a real payment for testers; payment.status "simulated" tells the backend Prime was not paid.
+        : r.payment.status === "simulated" ? PAID_MESSAGE
         : r.payment.status === "awaiting_transfer" ? "Order placed on Prime; waiting for the bank transfer."
         : r.payment.status === "not_paid" && r.payment.method === "bank_transfer" ? `Order placed on Prime but not paid: ${r.payment.detail}`
         : r.payment.status === "uncertain" ? "Order placed on Prime; payment is uncertain, reconcile before any retry."
