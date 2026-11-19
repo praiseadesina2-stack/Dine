@@ -108,14 +108,17 @@ test("a low Prime wallet stops before the cart and says how much to top up, and 
   const r = await runOrderFlow(bot, shawarma);
   assert.ok(!r.ok && r.code === "PRIME_WALLET_LOW", JSON.stringify(r));
   assert.ok(!r.ok && !r.cartTouched && bot.cart.length === 0);
-  assert.deepEqual(!r.ok && r.topUp, { shortfallKobo: 50_000, balanceKobo: 150_000, fundingAccount: { accountNumber: "9894065716", bankName: "Flutterwave MFB (Formerly OK MFB)" } });
+  // ₦2,000 shawarma + Prime's ₦600 fee = ₦2,600; the wallet has ₦1,500.
+  assert.deepEqual(!r.ok && r.topUp, { shortfallKobo: 110_000, balanceKobo: 150_000, fundingAccount: { accountNumber: "9894065716", bankName: "Flutterwave MFB (Formerly OK MFB)" } });
 });
 
 test("paid from the wallet: verified only when the balance drops by exactly the total (SYNTHETIC checkout)", async () => {
   const bot = new FakePrime({ ...CHECKOUT, walletKobo: 500_000, checkoutReply: { text: "✅ Order placed! Order ID: PR-90001", buttons: [] } });
   const r = await runOrderFlow(bot, shawarma);
   assert.ok(r.ok, JSON.stringify(r));
-  assert.deepEqual(r.ok && r.payment, { method: "prime_wallet", status: "verified", amountKobo: 200_000, balanceBeforeKobo: 500_000, balanceAfterKobo: 300_000, detail: "wallet went ₦5000 → ₦3000" });
+  // Prime charges the food plus its ₦600 fee: ₦2,600.
+  assert.deepEqual(r.ok && r.payment, { method: "prime_wallet", status: "verified", amountKobo: 260_000, balanceBeforeKobo: 500_000, balanceAfterKobo: 240_000, detail: "wallet went ₦5000 → ₦2400" });
+  assert.ok(r.ok && r.totalKobo === 200_000 && r.primeFeeKobo === 60_000 && r.amountDueKobo === 260_000);
   assert.equal(r.ok && r.orderRef, "PR-90001");
 });
 
@@ -188,8 +191,9 @@ test("a whole tray from three vendors goes in ONE cart with ONE checkout, paid a
   assert.deepEqual(r.ok && r.lines.map((l) => [l.itemName, l.qty, l.totalKobo]), [
     ["Shawarma + 1 Sausage", 2, 400_000], ["Delish Pack + 1 Kebab", 1, 220_000], ["Chips (Small)", 1, 170_000],
   ]);
-  assert.ok(r.ok && r.payment.status === "verified" && r.payment.balanceAfterKobo === 210_000);
-  assert.equal(bot.walletKobo, 210_000);
+  // ₦7,900 food + ₦600 Prime fee, once per order (not per item or vendor) = ₦8,500.
+  assert.ok(r.ok && r.payment.status === "verified" && r.payment.balanceAfterKobo === 150_000, JSON.stringify(r.ok && r.payment));
+  assert.equal(bot.walletKobo, 150_000);
 });
 
 test("every item is verified before anything goes in the cart", async () => {
@@ -212,7 +216,7 @@ test("the wallet must cover the whole tray before anything is added", async () =
   const bot = new FakePrime({ ...PAID, walletKobo: 500_000 });
   const r = await runCartOrder(bot, tray);
   assert.ok(!r.ok && r.code === "PRIME_WALLET_LOW" && !r.cartTouched, JSON.stringify(r));
-  assert.equal(!r.ok && r.topUp?.shortfallKobo, 290_000);
+  assert.equal(!r.ok && r.topUp?.shortfallKobo, 350_000, "₦7,900 + ₦600 fee − ₦5,000");
   assert.equal(bot.cart.length, 0);
 });
 

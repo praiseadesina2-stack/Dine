@@ -40,6 +40,8 @@ export interface FakeOptions {
   cartTotalOverrideKobo?: number;
   /** SYNTHETIC: what Prime says in the chat after a transfer lands (none: Prime stays silent). */
   paidMessage?: string;
+  /** Prime's per-order fee charged at checkout, in kobo (default ₦600). */
+  primeFeeKobo?: number;
 }
 
 /** Prime's wallet screen, in the exact format crawled on 19 Oct. */
@@ -73,7 +75,8 @@ export class FakePrime implements PrimeBot {
   }
 
   private pay() {
-    this.walletKobo -= this.o.chargeOverrideKobo ?? this.cartKobo;
+    // Prime charges the cart plus its per-order fee (₦600 unless a scenario sets another).
+    this.walletKobo -= this.o.chargeOverrideKobo ?? this.cartKobo + (this.o.primeFeeKobo ?? 60_000);
   }
 
   private screen(id: string, qty = 1): BotScreen {

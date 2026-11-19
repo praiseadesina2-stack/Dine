@@ -11,6 +11,8 @@ import { parseBankTransfer } from "./prime-transfer.js";
 import { payeeAllowed, payPrimeTransfer, type KoraPayouts } from "./pay-transfer.js";
 import { similarity, suggestNames } from "./suggest.js";
 import { payeesFor, runOrderAndPay } from "./order-and-pay.js";
+import { dineFeeKobo, orderCharges, primeFeeKobo } from "./charges.js";
+import { trayToCartLines } from "./tray.js";
 import { FakePrime } from "./sim-prime.js";
 import { WalletService } from "../wallet.js";
 import type { KoraDisbursementPayload } from "../kora.js";
@@ -32,12 +34,12 @@ test("bank-transfer screen parsing (recorded format)", () => {
 // ---------------------------------------------------------------- the flow, transfer mode
 
 test("transfer mode: Prime asks for exactly the cart total → awaiting_transfer, Prime wallet never opened", async () => {
-  const bot = new FakePrime({ cartButtons: ["Checkout"], checkoutReply: { text: transferText("2,000"), buttons: [] } });
+  const bot = new FakePrime({ cartButtons: ["Checkout"], checkoutReply: { text: transferText("2,600"), buttons: [] } });
   const r = await runOrderFlow(bot, shawarma, { payWith: "transfer" });
   assert.ok(r.ok, JSON.stringify(r));
   assert.equal(r.ok && r.payment.status, "awaiting_transfer");
   assert.equal(r.ok && r.payment.method, "bank_transfer");
-  assert.deepEqual(r.ok && r.transfer, { accountNumber: "9479959026", bankName: "Flutterwave MFB", accountName: "Prime That", amountKobo: 200_000 });
+  assert.deepEqual(r.ok && r.transfer, { accountNumber: "9479959026", bankName: "Flutterwave MFB", accountName: "Prime That", amountKobo: 260_000 });
   assert.equal(r.ok && r.orderRef, "PR-55120");
   assert.ok(!bot.clicks.some((c) => /wallet/i.test(c)), "the Prime wallet is not read in transfer mode");
 });
@@ -51,11 +53,11 @@ test("transfer mode: Prime asking for a different amount is refused, nothing pai
 });
 
 test("transfer mode: a whole tray is one transfer for the whole cart", async () => {
-  const bot = new FakePrime({ cartButtons: ["Checkout"], checkoutReply: { text: transferText("4,000"), buttons: [] } });
+  const bot = new FakePrime({ cartButtons: ["Checkout"], checkoutReply: { text: transferText("4,600"), buttons: [] } });
   const r = await runCartOrder(bot, [shawarma, shawarma], { payWith: "transfer" });
   assert.ok(r.ok, JSON.stringify(r));
   assert.equal(r.ok && r.totalKobo, 400_000);
-  assert.equal(r.ok && r.transfer?.amountKobo, 400_000);
+  assert.equal(r.ok && r.transfer?.amountKobo, 460_000);
 });
 
 test("transfer mode: a Paystack link is not paid, and a wallet-pay button is never pressed", async () => {
@@ -74,7 +76,7 @@ test("transfer mode: a Paystack link is not paid, and a wallet-pay button is nev
 });
 
 test("wallet mode still takes a transfer request when that is what Prime shows", async () => {
-  const bot = new FakePrime({ cartButtons: ["Checkout"], checkoutReply: { text: transferText("2,000"), buttons: [] } });
+  const bot = new FakePrime({ cartButtons: ["Checkout"], checkoutReply: { text: transferText("2,600"), buttons: [] } });
   const r = await runOrderFlow(bot, shawarma);
   assert.ok(r.ok && r.payment.status === "awaiting_transfer", JSON.stringify(r));
 });
@@ -150,13 +152,13 @@ test("the agent reads Dine's registered Prime name from the greeting and pays on
   delete process.env.PRIME_PAYEE_NAMES;
   try {
     const opts = (resolvedName: string) => ({ kora: fakeKora({ resolvedName }).kora, reference: "g", confirmTimeoutMs: 10 });
-    const ours = await runOrderAndPay(new FakePrime({ ...checkoutTo("9479959026", "2,000", "Prime Mark"), paidMessage: "Payment received" }), [shawarma], opts("PRIME MARK"));
+    const ours = await runOrderAndPay(new FakePrime({ ...checkoutTo("9479959026", "2,600", "Prime Mark"), paidMessage: "Payment received" }), [shawarma], opts("PRIME MARK"));
     assert.ok(ours.order.ok && ours.order.primeCustomerName === "mark", "crawled home screen: 'Hi mark! 👋'");
     assert.equal(ours.payout?.status, "sent", String(ours.payout?.detail));
     assert.ok(ours.order.ok && ours.order.payment.status === "verified");
 
     // Prime shows our name, but the bank says the account is someone else's: blocked.
-    const theirs = await runOrderAndPay(new FakePrime(checkoutTo("9479959026", "2,000", "Prime Mark")), [shawarma], opts("PRIME DAVID"));
+    const theirs = await runOrderAndPay(new FakePrime(checkoutTo("9479959026", "2,600", "Prime Mark")), [shawarma], opts("PRIME DAVID"));
     assert.equal(theirs.payout?.status, "blocked");
     assert.ok(theirs.order.ok && theirs.order.payment.status === "not_paid");
   } finally {
@@ -213,7 +215,7 @@ test("payee matching needs every word of an allowed name", () => {
 
 // ---------------------------------------------------------------- the agent orders AND pays
 
-const checkoutTo = (account: string, naira = "2,000", name = "Prime That") => ({
+const checkoutTo = (account: string, naira = "2,600", name = "Prime That") => ({
   cartButtons: ["Checkout"],
   checkoutReply: { text: `Send ₦${naira} to:\nAccount number: ${account}\nBank: Flutterwave MFB\nName: ${name}`, buttons: [] },
 });
@@ -229,7 +231,7 @@ test("each checkout's own virtual account is paid; nothing is pinned", async () 
 
 test("live: verified only when Prime confirms the payment in its chat", async () => {
   const { kora } = fakeKora({ resolvedName: "PRIME THAT" });
-  const bot = new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "✅ Payment received! ₦2,000\nYour order is being prepared." });
+  const bot = new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "✅ Payment received! ₦2,600\nYour order is being prepared." });
   const { order, payout } = await orderAndPay(bot, kora);
   assert.equal(payout?.status, "sent");
   assert.ok(order.ok && order.payment.status === "verified", JSON.stringify(order.ok && order.payment));
@@ -269,6 +271,41 @@ test("an order that fails before checkout never reaches Kora", async () => {
   assert.ok(!order.ok && order.code === "VENDOR_CLOSED");
   assert.equal(payout, undefined);
   assert.equal(sent.length, 0);
+});
+
+// ---------------------------------------------------------------- charges: Prime ₦600, Dine ₦100, per order
+
+test("charges: Prime is paid food + ₦600; the student pays food + ₦600 + ₦100", () => {
+  const c = orderCharges(200_000, { primeFeeKobo: 60_000, dineFeeKobo: 10_000 });
+  assert.deepEqual(c, { foodKobo: 200_000, primeFeeKobo: 60_000, dineFeeKobo: 10_000, payPrimeKobo: 260_000, chargeStudentKobo: 270_000 });
+});
+
+test("the tray conversion carries the charges, once per order however many items", () => {
+  const conv = trayToCartLines([
+    { itemName: "Shawarma + 1 Sausage", vendorName: "Slash Shawarma", price: 2000 },
+    { itemName: "Shawarma + 1 Sausage", vendorName: "Slash Shawarma", price: 2000 },
+    { itemName: "Chips (Small)", vendorName: "Grandpa Chips", price: 1500 },
+  ]);
+  assert.ok(conv.ok);
+  assert.equal(conv.ok && conv.totalKobo, 550_000);
+  assert.equal(conv.ok && conv.charges.payPrimeKobo, 550_000 + primeFeeKobo());
+  assert.equal(conv.ok && conv.charges.chargeStudentKobo, 550_000 + primeFeeKobo() + dineFeeKobo());
+});
+
+test("Prime asking for the food without its fee is a mismatch: nothing paid", async () => {
+  const { kora, sent } = fakeKora({ resolvedName: "PRIME THAT" });
+  const { order } = await orderAndPay(new FakePrime(checkoutTo("9479959026", "2,000")), kora);
+  assert.ok(!order.ok && order.code === "TRANSFER_MISMATCH", JSON.stringify(!order.ok && order.detail));
+  assert.equal(sent.length, 0);
+});
+
+test("never pays Prime more than the student approved (e.g. a pack fee added on top)", async () => {
+  const { kora, sent } = fakeKora({ resolvedName: "PRIME THAT" });
+  const { order } = await runOrderAndPay(new FakePrime({ ...checkoutTo("9479959026"), paidMessage: "Payment received" }), [shawarma], {
+    kora, reference: "cap", allowedPayees: ["Prime That"], confirmTimeoutMs: 10, maxPayPrimeKobo: 250_000,
+  });
+  assert.ok(order.ok && order.payment.status === "not_paid", JSON.stringify(order.ok && order.payment));
+  assert.equal(sent.length, 0, "Kora never called");
 });
 
 // ---------------------------------------------------------------- student wallet

@@ -29,6 +29,14 @@ export interface OrderAndPayOptions {
   /** Default payeesFor(): PRIME_PAYEE_NAMES, else "Prime <registered name>" from Prime's greeting. */
   allowedPayees?: string[];
   confirmTimeoutMs?: number;
+  /**
+   * The most Dine may pay Prime for this order: what the student approved, food + Prime's
+   * fee (trayToCartLines → charges.payPrimeKobo). Pack fees can push Prime's amount above
+   * it; then nothing is paid. Omit only in tests.
+   */
+  maxPayPrimeKobo?: number;
+  /** Prime's per-order fee; default PRIME_FEE_NAIRA (₦600). */
+  primeFeeKobo?: number;
 }
 
 export interface OrderAndPayResult {
@@ -53,12 +61,18 @@ export function payeesFor(primeCustomerName: string | undefined): string[] {
 }
 
 export async function runOrderAndPay(bot: PrimeBot, lines: CartLine[], o: OrderAndPayOptions): Promise<OrderAndPayResult> {
-  const order = await runCartOrder(bot, lines, { payWith: "transfer" });
+  const order = await runCartOrder(bot, lines, { payWith: "transfer", ...(o.primeFeeKobo != null ? { primeFeeKobo: o.primeFeeKobo } : {}) });
   if (!order.ok || order.payment.status !== "awaiting_transfer" || !order.transfer) return { order };
+
+  const due = order.amountDueKobo;
+  if (o.maxPayPrimeKobo != null && due > o.maxPayPrimeKobo) {
+    const detail = `Prime asks for ₦${due / 100}, more than the ₦${o.maxPayPrimeKobo / 100} the student approved (pack fees?); nothing paid`;
+    return { order: { ...order, steps: [...order.steps, detail], payment: { ...order.payment, status: "not_paid", detail } } };
+  }
 
   await bot.markChat?.();
   const allowedPayees = o.allowedPayees ?? payeesFor(order.primeCustomerName);
-  const payout = await payPrimeTransfer({ kora: o.kora, transfer: order.transfer, totalKobo: order.totalKobo, reference: o.reference, allowedPayees });
+  const payout = await payPrimeTransfer({ kora: o.kora, transfer: order.transfer, totalKobo: due, reference: o.reference, allowedPayees });
   const steps = [...order.steps, `payout ${payout.status}: ${payout.detail}`];
   const done = (status: PaymentEvidence["status"], detail: string): OrderAndPayResult => ({
     order: { ...order, steps: [...steps, `payment ${status}: ${detail}`], payment: { ...order.payment, status, detail } },
@@ -88,11 +102,13 @@ export async function runOrderAndPay(bot: PrimeBot, lines: CartLine[], o: OrderA
   const timeout = o.confirmTimeoutMs ?? DEFAULT_CONFIRM_TIMEOUT_MS;
   const msg = await bot.waitForMessage(PRIME_PAID, timeout);
   if (!msg) {
-    return done("uncertain", `Kora sent ₦${order.totalKobo / 100} but Prime did not confirm within ${Math.round(timeout / 1000)} s; hold and check verifyPayout("${o.reference}")`);
+    return done("uncertain", `Kora sent ₦${due / 100} but Prime did not confirm within ${Math.round(timeout / 1000)} s; hold and check verifyPayout("${o.reference}")`);
   }
+  // Prime's confirmation may show the total paid or the food alone; anything else is wrong.
   const shown = msg.text.match(NAIRA)?.[1];
-  if (shown && Math.round(Number(shown.replace(/,/g, "")) * 100) !== order.totalKobo) {
-    return done("uncertain", `Prime confirmed ₦${shown}, the order is ₦${order.totalKobo / 100}; reconcile`);
+  const shownKobo = shown ? Math.round(Number(shown.replace(/,/g, "")) * 100) : undefined;
+  if (shownKobo != null && shownKobo !== due && shownKobo !== order.totalKobo) {
+    return done("uncertain", `Prime confirmed ₦${shown}, the order is ₦${due / 100}; reconcile`);
   }
   return done("verified", `Prime confirmed: "${msg.text.split("\n").find((l) => PRIME_PAID.test(l))?.trim() ?? msg.text.slice(0, 80)}"`);
 }

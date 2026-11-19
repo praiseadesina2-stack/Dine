@@ -85,12 +85,14 @@ const conv = trayToCartLines(getTray(userId)); // tray items: itemName, vendorNa
 if (!conv.ok) return ctx.reply(conv.problems.join("\n")); // e.g. a "Prime Vendor" placeholder or a missing price
 
 const ref = `order_${userId}_${Date.now()}`; // one reference for the hold and the payout, created first
-const hold = await walletService.reserve({ telegramUserId: String(userId), amountKobo: conv.totalKobo, reference: ref });
+// Food + Prime's ₦600 + Dine's ₦100 (per order). Dine's ₦100 stays in Dine's Kora account.
+const hold = await walletService.reserve({ telegramUserId: String(userId), amountKobo: conv.charges.chargeStudentKobo, reference: ref });
 if (!hold) return /* insufficient balance: the existing top-up prompt */;
 
 // The agent orders, pays the virtual account Prime gives for this checkout, and waits for
 // Prime's "payment received". Pass the hold's reference: it becomes the Kora payout reference.
-const result = await orderingAgent.placeTrayOrder(conv.lines, undefined, { reference: ref });
+// maxPayPrimeKobo: Prime must ask for exactly food + ₦600; never more than the student approved.
+const result = await orderingAgent.placeTrayOrder(conv.lines, undefined, { reference: ref, maxPayPrimeKobo: conv.charges.payPrimeKobo });
 if (!result.success) {
   await walletService.release(ref, result.code);           // nothing was paid
   // result.suggestions → offer "Did you mean …?" buttons; result.cartTouched → clear Prime's cart before a retry
@@ -115,6 +117,10 @@ The demo mimics the real system: with Kora test keys the student's wallet (funde
 What the tray must keep for each item: the exact Prime `vendorName` and item name (`MealSuggestion.vendorName`, `MealSuggestion.items[].name`), the item price in naira (`items[].price`), and `MealSuggestion.location` (optional, makes the search faster). `trayToCartLines` refuses an item with no vendor, the placeholder vendor `"Prime Vendor"`, or no price, rather than guessing. Hall and room are not inputs: Prime delivers to the Dine account's profile (guarantee 9).
 
 ## Paying Prime
+
+**Charges, once per order** (`packages/ai/src/order/charges.ts`): Prime adds **₦600** at checkout (`PRIME_FEE_NAIRA`), Dine charges **₦100** (`DINE_FEE_NAIRA`). Prime's virtual account must ask for exactly food + ₦600 (else `TRANSFER_MISMATCH`, nothing paid); Kora pays Prime food + ₦600 from Dine's Kora account; the student's wallet is charged food + ₦600 + ₦100; Dine's ₦100 stays in Dine's Kora account. `trayToCartLines(tray).charges` gives all of these.
+
+**Where the money is:** the student's Dine wallet is Dine's record of how much of the money in **Dine's Kora account** (paid in with cards through Kora) belongs to each student. An order reserves its amount in that record, Kora pays Prime out of Dine's Kora account, and the reservation is then captured, so the wallet goes down a few seconds after Prime is paid.
 
 Students never pay Prime directly: their money stays in Dine's wallet, reserved (`walletService.reserve`), until the order is proven paid (`capture`) or not (`release`). Dine pays Prime in one of two ways, set by **`PRIME_PAY_MODE`** (`transfer`, the default, or `wallet`). Whichever Prime's checkout actually shows wins.
 

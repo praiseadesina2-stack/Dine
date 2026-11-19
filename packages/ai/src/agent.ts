@@ -59,8 +59,12 @@ export interface AgentOrderResult {
   stage: OrderStage;
   /** True once "Add to cart" was pressed: the Prime cart may hold items and must be cleared before a retry. */
   cartTouched: boolean;
-  /** Prime's total for the whole tray in kobo (items × qty plus packs). This is what Dine pays: reserve against it. */
+  /** Prime's total for the food in the tray, in kobo (items × qty plus packs). */
   totalKobo?: number;
+  /** Prime's per-order fee (₦600 by default). */
+  primeFeeKobo?: number;
+  /** totalKobo + primeFeeKobo: what Dine paid (or must pay) Prime. */
+  amountDueKobo?: number;
   /** Success only: every line as Prime showed it when added. */
   lines?: VerifiedLine[];
   /** Failure only: the tray line the order stopped on, when it stopped on one. */
@@ -157,10 +161,14 @@ export class DineOrderingAgent {
    * Then act on result.payment.status: verified or simulated (test keys) → capture;
    * not_paid → release; uncertain → hold and reconcile.
    */
-  public async placeTrayOrder(lines: CartLine[], botUsername?: string, opts: { payWith?: PayWith; reference?: string; confirmTimeoutMs?: number } = {}): Promise<AgentOrderResult> {
+  public async placeTrayOrder(
+    lines: CartLine[],
+    botUsername?: string,
+    opts: { payWith?: PayWith; reference?: string; confirmTimeoutMs?: number; maxPayPrimeKobo?: number } = {},
+  ): Promise<AgentOrderResult> {
     const payWith = opts.payWith ?? payModeFromEnv();
     const reference = opts.reference?.trim() || `dine_order_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    return this.withSession(() => this.placeTrayOrderNow(lines, botUsername, payWith, reference, opts.confirmTimeoutMs));
+    return this.withSession(() => this.placeTrayOrderNow(lines, botUsername, payWith, reference, opts.confirmTimeoutMs, opts.maxPayPrimeKobo));
   }
 
   /**
@@ -205,7 +213,7 @@ export class DineOrderingAgent {
     return new TelegramPrimeBot(client, await client.getEntity(username));
   }
 
-  private async placeTrayOrderNow(lines: CartLine[], botUsername: string | undefined, payWith: PayWith, reference: string, confirmTimeoutMs?: number): Promise<AgentOrderResult> {
+  private async placeTrayOrderNow(lines: CartLine[], botUsername: string | undefined, payWith: PayWith, reference: string, confirmTimeoutMs?: number, maxPayPrimeKobo?: number): Promise<AgentOrderResult> {
     let bot: PrimeBot;
     try {
       bot = await this.primeBot(botUsername);
@@ -214,7 +222,7 @@ export class DineOrderingAgent {
     }
     if (payWith === "wallet") return toAgentResult(await runCartOrder(bot, lines, { payWith }));
     // Allowed payee: PRIME_PAYEE_NAMES, else "Prime <name>" read from Prime's greeting on this order.
-    const { order, payout } = await runOrderAndPay(bot, lines, { kora: this.kora, reference, confirmTimeoutMs });
+    const { order, payout } = await runOrderAndPay(bot, lines, { kora: this.kora, reference, confirmTimeoutMs, maxPayPrimeKobo });
     return { ...toAgentResult(order), reference, ...(payout ? { payout } : {}) };
   }
 }
@@ -236,6 +244,8 @@ export function toAgentResult(r: OrderFlowResult): AgentOrderResult {
         : r.paystackUrl ? "Order placed on Prime; not paid yet, Prime returned a checkout link."
         : "Order placed on Prime; not paid yet.",
       totalKobo: r.totalKobo,
+      primeFeeKobo: r.primeFeeKobo,
+      amountDueKobo: r.amountDueKobo,
       lines: r.lines,
       paystackUrl: r.paystackUrl,
       orderRef: r.orderRef,

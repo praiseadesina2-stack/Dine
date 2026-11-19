@@ -83,7 +83,7 @@ export async function payPrimeTransfer(args: {
   kora: KoraPayouts;
   /** From the order result: `result.transfer`. */
   transfer: BankTransfer;
-  /** From the order result: `result.totalKobo`, the verified cart. */
+  /** What Prime must be paid: the verified cart plus Prime's fee (`amountDueKobo` on the order result). */
   totalKobo: number;
   /** Unique, created and stored by the caller BEFORE this call (e.g. the reservation id). */
   reference: string;

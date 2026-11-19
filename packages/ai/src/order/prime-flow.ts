@@ -27,6 +27,7 @@
 import { judgePayment, readPrimeWallet, WALLET_PAY_LABELS, type FundingAccount, type PaymentEvidence, type PrimeWallet } from "./prime-wallet.js";
 import { parseBankTransfer, type BankTransfer } from "./prime-transfer.js";
 import { suggestNames } from "./suggest.js";
+import { primeFeeKobo } from "./charges.js";
 
 export interface BotButton {
   row: number;
@@ -90,8 +91,12 @@ export type TopUp = { shortfallKobo: number; balanceKobo: number; fundingAccount
 export type OrderFlowResult =
   | {
       ok: true;
-      /** Prime's total for the whole cart (items, quantities, packs), in kobo. This is what Dine pays. */
+      /** Prime's total for the food in the cart (items, quantities, packs), in kobo. */
       totalKobo: number;
+      /** Prime's per-order charge added at checkout. */
+      primeFeeKobo: number;
+      /** totalKobo + primeFeeKobo: what Dine pays Prime. */
+      amountDueKobo: number;
       /** Every line as Prime showed it when added. */
       lines: VerifiedLine[];
       paystackUrl?: string;
@@ -265,6 +270,8 @@ export async function runOrderFlow(bot: PrimeBot, target: OrderTarget, opts: Car
 export interface CartOrderOptions {
   /** Default "wallet". "transfer" skips the Prime wallet reads and expects Prime to ask for a bank transfer. */
   payWith?: PayWith;
+  /** Prime's per-order charge (default PRIME_FEE_NAIRA, ₦600). Prime must ask for exactly cart + this. */
+  primeFeeKobo?: number;
 }
 
 /**
@@ -281,6 +288,7 @@ export interface CartOrderOptions {
  */
 export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOrderOptions = {}): Promise<OrderFlowResult> {
   const payWith: PayWith = opts.payWith ?? "wallet";
+  const primeFee = opts.primeFeeKobo ?? primeFeeKobo();
   const steps: string[] = [];
   let stage: OrderStage = "start";
   let cartTouched = false;
@@ -426,8 +434,8 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
       ...(w.fundingAccount ? { fundingAccount: w.fundingAccount } : {}),
     });
     totalKobo = estimateKobo;
-    if (walletBefore && walletBefore.balanceKobo < estimateKobo) {
-      return fail("PRIME_WALLET_LOW", `Prime wallet has ₦${walletBefore.balanceKobo / 100}, the tray needs ₦${estimateKobo / 100}`, { topUp: topUpFor(walletBefore, estimateKobo) });
+    if (walletBefore && walletBefore.balanceKobo < estimateKobo + primeFee) {
+      return fail("PRIME_WALLET_LOW", `Prime wallet has ₦${walletBefore.balanceKobo / 100}, the tray needs ₦${(estimateKobo + primeFee) / 100} with Prime's fee`, { topUp: topUpFor(walletBefore, estimateKobo + primeFee) });
     }
 
     // 4. Add every line at its quantity.
@@ -460,8 +468,10 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     }
     current = undefined;
     totalKobo = added.reduce((sum, l) => sum + l.totalKobo, 0);
-    if (walletBefore && walletBefore.balanceKobo < totalKobo) {
-      return fail("PRIME_WALLET_LOW", `Prime's cart came to ₦${totalKobo / 100}, more than the ₦${walletBefore.balanceKobo / 100} in the wallet`, { topUp: topUpFor(walletBefore, totalKobo) });
+    /** What Prime will charge: the food plus Prime's per-order fee. */
+    const dueKobo = totalKobo + primeFee;
+    if (walletBefore && walletBefore.balanceKobo < dueKobo) {
+      return fail("PRIME_WALLET_LOW", `Prime's cart came to ₦${dueKobo / 100} with Prime's fee, more than the ₦${walletBefore.balanceKobo / 100} in the wallet`, { topUp: topUpFor(walletBefore, dueKobo) });
     }
 
     // 5. The cart shows exactly this tray.
@@ -474,8 +484,9 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     const missing = added.filter((l) => !cartText.includes(normalise(l.itemName)));
     if (missing.length) return fail("CART_MISMATCH", `the cart does not show: ${missing.map((l) => l.itemName).join(", ")}`);
     const shownTotal = filled.text.match(/total[^₦\n]*₦\s*([\d,]+)/i);
-    if (shownTotal && kobo(shownTotal[1]) !== totalKobo) {
-      return fail("CART_MISMATCH", `Prime's cart total is ₦${kobo(shownTotal[1]) / 100}, the tray is ₦${totalKobo / 100}`);
+    // Prime's cart may show the food alone or already include its fee; anything else is wrong.
+    if (shownTotal && kobo(shownTotal[1]) !== totalKobo && kobo(shownTotal[1]) !== dueKobo) {
+      return fail("CART_MISMATCH", `Prime's cart total is ₦${kobo(shownTotal[1]) / 100}, the tray is ₦${totalKobo / 100} (₦${dueKobo / 100} with Prime's fee)`);
     }
 
     // 6. One checkout.
@@ -484,24 +495,25 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     if (!checkoutLabel) {
       return fail("CHECKOUT_UNMAPPED", `no known checkout button on the cart screen (buttons: ${filled.buttons.map((b) => b.label).join(", ")})`);
     }
-    if (walletBefore) paymentPending = { amountKobo: totalKobo, balanceBeforeKobo: walletBefore.balanceKobo };
+    if (walletBefore) paymentPending = { amountKobo: dueKobo, balanceBeforeKobo: walletBefore.balanceKobo };
+    const charged = { totalKobo, primeFeeKobo: primeFee, amountDueKobo: dueKobo };
     let after = await press(filled, checkoutLabel, "checkout");
     if (!after) return fail("BOT_ERROR", "checkout button could not be pressed");
     const ref = after.text.match(ORDER_REF)?.[1];
 
-    // Prime asks for a bank transfer: hand it to the backend, never pay it here. Prime's
-    // amount must be exactly the cart that was verified line by line.
+    // Prime asks for a bank transfer: returned for payment, never paid here. Prime's amount
+    // must be exactly the cart verified line by line plus Prime's per-order fee.
     const transfer = parseBankTransfer(after.text);
     if (transfer) {
       paymentPending = undefined; // nothing moves at checkout on this path
       steps.push(`Prime asks for a transfer of ₦${transfer.amountKobo / 100} to ${transfer.accountNumber} (${transfer.bankName})`);
-      if (transfer.amountKobo !== totalKobo) {
-        payment = { method: "bank_transfer", status: "not_paid", amountKobo: totalKobo, transfer, detail: `Prime asks for ₦${transfer.amountKobo / 100}, the verified cart is ₦${totalKobo / 100}; nothing paid` };
+      if (transfer.amountKobo !== dueKobo) {
+        payment = { method: "bank_transfer", status: "not_paid", amountKobo: dueKobo, transfer, detail: `Prime asks for ₦${transfer.amountKobo / 100}, expected ₦${dueKobo / 100} (food ₦${totalKobo / 100} + Prime's fee ₦${primeFee / 100}); nothing paid` };
         return fail("TRANSFER_MISMATCH", payment.detail);
       }
-      payment = { method: "bank_transfer", status: "awaiting_transfer", amountKobo: totalKobo, transfer, detail: `pay ₦${totalKobo / 100} to ${transfer.accountNumber} (${transfer.bankName}) with payPrimeTransfer()` };
+      payment = { method: "bank_transfer", status: "awaiting_transfer", amountKobo: dueKobo, transfer, detail: `pay ₦${dueKobo / 100} to ${transfer.accountNumber} (${transfer.bankName})` };
       stage = "done";
-      return { ok: true, totalKobo, lines: added, ...(ref ? { orderRef: ref } : {}), payment, transfer, ...(primeCustomerName ? { primeCustomerName } : {}), steps };
+      return { ok: true, ...charged, lines: added, ...(ref ? { orderRef: ref } : {}), payment, transfer, ...(primeCustomerName ? { primeCustomerName } : {}), steps };
     }
 
     if (!walletBefore) {
@@ -509,14 +521,14 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
       // nothing can be proven about it: never press a wallet-pay button here.
       const url = after.text.match(PAYSTACK)?.[0] ?? after.buttons.find((b) => b.url && PAYSTACK.test(b.url))?.url;
       if (url) {
-        payment = { method: "paystack_link", status: "not_paid", amountKobo: totalKobo, detail: "Prime returned a Paystack link, not transfer details" };
+        payment = { method: "paystack_link", status: "not_paid", amountKobo: dueKobo, detail: "Prime returned a Paystack link, not transfer details" };
         stage = "done";
-        return { ok: true, totalKobo, lines: added, paystackUrl: url, ...(ref ? { orderRef: ref } : {}), payment, steps };
+        return { ok: true, ...charged, lines: added, paystackUrl: url, ...(ref ? { orderRef: ref } : {}), payment, steps };
       }
       if (CONFIRMED.test(after.text)) {
-        payment = { method: "prime_wallet", status: "uncertain", amountKobo: totalKobo, detail: "Prime confirmed without asking for a transfer; it may have charged the Prime wallet. Reconcile before any retry" };
+        payment = { method: "prime_wallet", status: "uncertain", amountKobo: dueKobo, detail: "Prime confirmed without asking for a transfer; it may have charged the Prime wallet. Reconcile before any retry" };
         stage = "done";
-        return { ok: true, totalKobo, lines: added, ...(ref ? { orderRef: ref } : {}), payment, steps };
+        return { ok: true, ...charged, lines: added, ...(ref ? { orderRef: ref } : {}), payment, steps };
       }
       return fail("CHECKOUT_UNMAPPED", `after checkout Prime showed no transfer details (buttons: ${after.buttons.map((b) => b.label).join(", ")})`);
     }
@@ -543,17 +555,17 @@ export async function runCartOrder(bot: PrimeBot, tray: CartLine[], opts: CartOr
     }
     payment = {
       method: url && !paidWithWallet ? "paystack_link" : "prime_wallet",
-      amountKobo: totalKobo,
+      amountKobo: dueKobo,
       balanceBeforeKobo: walletBefore.balanceKobo,
       ...(afterKobo != null ? { balanceAfterKobo: afterKobo } : {}),
-      ...judgePayment(walletBefore.balanceKobo, afterKobo, totalKobo),
+      ...judgePayment(walletBefore.balanceKobo, afterKobo, dueKobo),
     };
     steps.push(`payment ${payment.status}: ${payment.detail}`);
 
     if (!url && !CONFIRMED.test(after.text)) return fail("UNEXPECTED_SCREEN", "checkout gave neither a payment link nor an order confirmation");
 
     stage = "done";
-    return { ok: true, totalKobo, lines: added, ...(url ? { paystackUrl: url } : {}), ...(paidRef ? { orderRef: paidRef } : {}), payment, steps };
+    return { ok: true, ...charged, lines: added, ...(url ? { paystackUrl: url } : {}), ...(paidRef ? { orderRef: paidRef } : {}), payment, steps };
   } catch (err: any) {
     if (paymentPending && !payment) {
       payment = { method: "prime_wallet", status: "uncertain", ...paymentPending, detail: "Prime stopped replying after checkout; reconcile the wallet before any retry" };

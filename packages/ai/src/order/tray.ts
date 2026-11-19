@@ -9,6 +9,7 @@
  *   const result = await agent.placeTrayOrder(lines.lines);
  */
 import { mergeLines, MAX_QTY, type CartLine } from "./prime-flow.js";
+import { orderCharges, type OrderCharges } from "./charges.js";
 
 /** A tray item as the bot stores it. Extra fields are ignored. */
 export interface TrayItemInput {
@@ -24,7 +25,18 @@ export interface TrayItemInput {
 }
 
 export type TrayConversion =
-  | { ok: true; lines: CartLine[]; totalKobo: number }
+  | {
+      ok: true;
+      lines: CartLine[];
+      /** The food alone, at the prices the student approved. */
+      totalKobo: number;
+      /**
+       * Food + Prime's ₦600 + Dine's ₦100 (charges.ts). Reserve `charges.chargeStudentKobo`
+       * in the student's wallet; pass `charges.payPrimeKobo` to placeTrayOrder as the most
+       * the agent may pay Prime.
+       */
+      charges: OrderCharges;
+    }
   | { ok: false; problems: string[] };
 
 /**
@@ -55,5 +67,6 @@ export function trayToCartLines(tray: TrayItemInput[]): TrayConversion {
     if (l.qty! > MAX_QTY) problems.push(`${l.itemName}: at most ${MAX_QTY} of one item per order.`);
   }
   if (problems.length) return { ok: false, problems };
-  return { ok: true, lines, totalKobo: lines.reduce((s, l) => s + l.expectedPriceKobo * l.qty!, 0) };
+  const totalKobo = lines.reduce((s, l) => s + l.expectedPriceKobo * l.qty!, 0);
+  return { ok: true, lines, totalKobo, charges: orderCharges(totalKobo) };
 }
